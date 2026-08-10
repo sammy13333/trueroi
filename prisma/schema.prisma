@@ -1,0 +1,189 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+enum CampaignClassification {
+  AGENCY_ACQUISITION
+  CLIENT_DELIVERY
+  IGNORE
+}
+
+enum LeadOutcome {
+  LEAD
+  FOLLOW_UP
+  ARCHIVED
+  BOOKED
+  CANCELED
+  NO_SHOW
+  SHOWED
+  SOLD
+  UNQUALIFIED
+  LOST
+  NOT_READY
+}
+
+enum SyncStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+enum PaymentType {
+  SUCCESSFUL_REVENUE
+  REFUND
+  FAILED_PAYMENT
+  FEE
+  DISPUTE
+  PAYOUT
+  OTHER
+}
+
+model AgencyProfile {
+  id                 String   @id @default("default")
+  name               String   @default("My Agency")
+  metaAdAccountId    String?
+  metaAccessTokenEnc String?
+  ghlLocationId      String?
+  ghlApiTokenEnc     String?
+  pipelineMappings   String   @default("[]")
+  stageTagMappings   String   @default("{}")
+  syncWindowStart    DateTime?
+  syncWindowEnd      DateTime?
+  defaultDateBasis   String   @default("lead_created")
+  defaultRevSharePct Float    @default(7.5)
+  updatedAt          DateTime @updatedAt
+  createdAt          DateTime @default(now())
+}
+
+model AgencyMetaCampaign {
+  id             String                 @id @default(cuid())
+  metaId         String                 @unique
+  name           String
+  status         String?
+  effectiveStatus String?
+  objective      String?
+  startsAt       DateTime?
+  endsAt         DateTime?
+  classification CampaignClassification @default(AGENCY_ACQUISITION)
+  adsets         AgencyMetaAdset[]
+  metrics        AgencyDailyAdMetric[]
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+}
+
+model AgencyMetaAdset {
+  id         String              @id @default(cuid())
+  metaId     String              @unique
+  campaignId String
+  campaign   AgencyMetaCampaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  name       String
+  status     String?
+  ads        AgencyMetaAd[]
+  metrics    AgencyDailyAdMetric[]
+  createdAt  DateTime            @default(now())
+  updatedAt  DateTime            @updatedAt
+}
+
+model AgencyMetaAd {
+  id        String             @id @default(cuid())
+  metaId    String             @unique
+  adsetId   String
+  adset     AgencyMetaAdset    @relation(fields: [adsetId], references: [id], onDelete: Cascade)
+  name      String
+  status    String?
+  metrics   AgencyDailyAdMetric[]
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+}
+
+model AgencyDailyAdMetric {
+  id          String              @id @default(cuid())
+  date        DateTime
+  level       String
+  campaignId  String?
+  campaign    AgencyMetaCampaign? @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  adsetId     String?
+  adset       AgencyMetaAdset?    @relation(fields: [adsetId], references: [id], onDelete: Cascade)
+  adId        String?
+  ad          AgencyMetaAd?       @relation(fields: [adId], references: [id], onDelete: Cascade)
+  spendCents  Int                 @default(0)
+  impressions Int                 @default(0)
+  reach       Int                 @default(0)
+  clicks      Int                 @default(0)
+  leadForms   Int                 @default(0)
+  webSchedules Int                @default(0)
+  webLeads    Int                 @default(0)
+  otherResults Int                @default(0)
+  @@unique([date, level, campaignId, adsetId, adId])
+}
+
+model AgencyLead {
+  id              String       @id @default(cuid())
+  ghlContactId    String?      @unique
+  campaignMetaId  String?
+  adsetMetaId     String?
+  adMetaId        String?
+  utmCampaign     String?
+  utmContent      String?
+  email           String?
+  phone           String?
+  name            String?
+  outcome         LeadOutcome  @default(LEAD)
+  dealType        String?
+  attributedValueCents Int     @default(0)
+  createdAt       DateTime     @default(now())
+  outcomeAt       DateTime?
+  attributionMethod String?
+  updatedAt       DateTime     @updatedAt
+}
+
+model AgencySyncLog {
+  id           String     @id @default(cuid())
+  provider     String
+  mode         String?
+  status       SyncStatus @default(PENDING)
+  startedAt    DateTime   @default(now())
+  completedAt  DateTime?
+  latestMetricDate DateTime?
+  details      String?
+}
+
+model PaymentTransaction {
+  id                 String      @id @default(cuid())
+  processor          String
+  externalId         String?
+  normalizedType     PaymentType
+  status             String
+  grossCents         Int         @default(0)
+  netCents           Int         @default(0)
+  feeCents           Int         @default(0)
+  grossDollars       Float?
+  netDollars         Float?
+  processorCreatedAt DateTime?
+  paidAt             DateTime?
+  importedAt         DateTime    @default(now())
+  ignored            Boolean     @default(false)
+  duplicate          Boolean     @default(false)
+  @@unique([processor, externalId])
+}
+
+model AgencyExpenseLineItem {
+  id          String   @id @default(cuid())
+  name        String
+  category    String
+  amountCents Int
+  paidAt      DateTime
+  isPaid      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+}
