@@ -66,6 +66,17 @@ model AgencyProfile {
   createdAt          DateTime @default(now())
 }
 
+model Client {
+  id                 String   @id @default(cuid())
+  name               String
+  metaAdAccountId    String?
+  ghlLocationId      String?
+  industry           String?
+  lifecycle          String   @default("active")
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
 model AgencyMetaCampaign {
   id             String                 @id @default(cuid())
   metaId         String                 @unique

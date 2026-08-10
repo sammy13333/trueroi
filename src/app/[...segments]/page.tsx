@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { AppShell, FilterBar, PageHeader } from "@/components/app-shell";
+import { ClientConnectionForm } from "@/components/client-connection-form";
 
 const clientTitles: Record<string, [string, string]> = {
   clients: ["Clients", "Manage client delivery accounts, lifecycle, sync health, and MRR."],
@@ -35,21 +36,17 @@ export default async function ClientRoutePage({
         actions={<Link href="/agency/settings" className="rounded-md border px-3 py-2 text-xs text-zinc-400">Agency settings</Link>}
       />
       {!isNewClient && <FilterBar />}
-      <div className="m-5 grid min-h-80 place-items-center rounded-lg border border-[#272722] bg-[#0c0c0b] p-8 text-center sm:m-8">
-        <div className="max-w-md">
-          <h2 className="text-base font-medium text-zinc-200">
-            {isNewClient ? "Client connection setup" : "No client data is synced yet"}
-          </h2>
-          <p className="mt-2 text-sm leading-6 text-zinc-500">
-            {isNewClient
-              ? "Client Meta and GHL credentials will be stored per client, with hard separation from agency acquisition records."
-              : "Once a client source is connected and synced, this surface will report only that client’s delivery and CRM outcomes."}
-          </p>
-          <Link href="/clients/new" className="mt-5 inline-block text-xs font-medium text-[#d4af37]">
-            {isNewClient ? "Connection form coming next →" : "Add a client →"}
-          </Link>
+      {isNewClient ? (
+        <div className="m-5 sm:m-8"><ClientConnectionForm /></div>
+      ) : (
+        <div className="m-5 grid min-h-80 place-items-center rounded-lg border border-[#272722] bg-[#0c0c0b] p-8 text-center sm:m-8">
+          <div className="max-w-md">
+            <h2 className="text-base font-medium text-zinc-200">No client data is synced yet</h2>
+            <p className="mt-2 text-sm leading-6 text-zinc-500">Once a client source is connected and synced, this surface will report only that client’s delivery and CRM outcomes.</p>
+            <Link href="/clients/new" className="mt-5 inline-block text-xs font-medium text-[#d4af37]">Add a client →</Link>
+          </div>
         </div>
-      </div>
+      )}
     </AppShell>
   );
 }
