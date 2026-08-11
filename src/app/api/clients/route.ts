@@ -32,6 +32,18 @@ export async function POST(request: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid client details", issues: parsed.error.issues }, { status: 400 });
   }
+  const duplicate = await prisma.client.findFirst({
+    where: {
+      OR: [
+        { metaAdAccountId: parsed.data.metaAdAccountId },
+        { ghlLocationId: parsed.data.ghlLocationId },
+      ],
+    },
+    select: { name: true },
+  });
+  if (duplicate) {
+    return NextResponse.json({ error: `This Meta account or GoHighLevel location is already assigned to ${duplicate.name}.` }, { status: 409 });
+  }
   let metaAccessTokenEnc: string;
   let ghlPrivateTokenEnc: string;
   try {

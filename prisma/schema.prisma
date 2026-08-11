@@ -69,11 +69,11 @@ model AgencyProfile {
 model Client {
   id                 String   @id @default(cuid())
   name               String
-  metaAdAccountId    String?
+  metaAdAccountId    String?  @unique
   metaAccessTokenEnc String?
   metaPageId         String?
   metaLeadFormIds    String?
-  ghlLocationId      String?
+  ghlLocationId      String?  @unique
   ghlPrivateTokenEnc String?
   ghlCalendarId      String?
   industry           String?
@@ -82,8 +82,20 @@ model Client {
   monthlyRetainerCents Int?
   revSharePercent    Float?
   setupFeeCents      Int?
+  syncLogs           ClientSyncLog[]
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
+}
+
+model ClientSyncLog {
+  id        String   @id @default(cuid())
+  clientId  String
+  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  status    String   @default("PENDING")
+  mode      String   @default("ALL")
+  message   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model AgencyMetaCampaign {
