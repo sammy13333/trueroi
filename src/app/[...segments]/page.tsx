@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { AppShell, FilterBar, PageHeader } from "@/components/app-shell";
 import { ClientConnectionForm } from "@/components/client-connection-form";
+import { prisma } from "@/lib/prisma";
 
 const clientTitles: Record<string, [string, string]> = {
   clients: ["Clients", "Manage client delivery accounts, lifecycle, sync health, and MRR."],
@@ -26,6 +27,14 @@ export default async function ClientRoutePage({
   ];
   const isNewClient = section === "clients" && detail === "new";
   const isClientDetail = section === "clients" && detail && detail !== "new";
+  const client = isClientDetail ? await prisma.client.findUnique({
+    where: { id: detail },
+    select: { id: true, name: true, industry: true, metaAdAccountId: true, ghlLocationId: true, metaAccessTokenEnc: true, ghlPrivateTokenEnc: true, lifecycle: true },
+  }) : null;
+  const clients = section === "clients" && !detail ? await prisma.client.findMany({
+    orderBy: { updatedAt: "desc" },
+    select: { id: true, name: true, industry: true, metaAdAccountId: true, ghlLocationId: true, metaAccessTokenEnc: true, ghlPrivateTokenEnc: true, lifecycle: true },
+  }) : [];
 
   return (
     <AppShell>
@@ -38,6 +47,24 @@ export default async function ClientRoutePage({
       {!isNewClient && <FilterBar />}
       {isNewClient ? (
         <div className="m-5 sm:m-8"><ClientConnectionForm /></div>
+      ) : isClientDetail && client ? (
+        <div className="m-5 max-w-3xl space-y-4 sm:m-8">
+          <div className="rounded-lg border border-emerald-900/70 bg-emerald-950/20 px-4 py-3 text-sm text-emerald-300">Client workspace created successfully. Credentials are stored securely and ready for validation/sync.</div>
+          <section className="rounded-lg border border-[#272722] bg-[#0c0c0b] p-5">
+            <div className="flex items-start justify-between"><div><h2 className="text-lg font-medium text-zinc-100">{client.name}</h2><p className="mt-1 text-xs text-zinc-500">{client.industry || "Industry not set"} · {client.lifecycle}</p></div><Link href={`/clients/${client.id}/edit`} className="rounded-md border px-3 py-2 text-xs text-zinc-400">Edit client</Link></div>
+            <div className="mt-6 grid gap-3 sm:grid-cols-2">
+              <div className="rounded-md border bg-[#090909] p-3"><p className="text-[11px] uppercase tracking-wide text-zinc-600">Meta</p><p className="mt-2 text-sm text-zinc-300">{client.metaAdAccountId || "No ad account"}</p><p className={`mt-1 text-xs ${client.metaAccessTokenEnc ? "text-emerald-400" : "text-amber-300"}`}>{client.metaAccessTokenEnc ? "Access token configured" : "Token missing"}</p></div>
+              <div className="rounded-md border bg-[#090909] p-3"><p className="text-[11px] uppercase tracking-wide text-zinc-600">GoHighLevel</p><p className="mt-2 text-sm text-zinc-300">{client.ghlLocationId || "No location"}</p><p className={`mt-1 text-xs ${client.ghlPrivateTokenEnc ? "text-emerald-400" : "text-amber-300"}`}>{client.ghlPrivateTokenEnc ? "Private token configured" : "Token missing"}</p></div>
+            </div>
+          </section>
+        </div>
+      ) : section === "clients" ? (
+        <div className="m-5 max-w-5xl sm:m-8">
+          <div className="mb-4 flex justify-end"><Link href="/clients/new" className="rounded-md bg-[#d4af37] px-3.5 py-2 text-xs font-semibold text-black">Add client</Link></div>
+          <div className="overflow-hidden rounded-lg border border-[#272722] bg-[#0c0c0b]">
+            {clients.length === 0 ? <p className="p-8 text-center text-sm text-zinc-500">No clients yet. Add your first client connection.</p> : clients.map((item) => <Link key={item.id} href={`/clients/${item.id}`} className="flex items-center justify-between border-b border-[#272722] px-5 py-4 last:border-b-0 hover:bg-zinc-900/50"><div><p className="text-sm font-medium text-zinc-200">{item.name}</p><p className="mt-1 text-xs text-zinc-600">{item.industry || "Industry not set"} · {item.lifecycle}</p></div><div className="text-right text-xs"><p className={item.metaAccessTokenEnc && item.ghlPrivateTokenEnc ? "text-emerald-400" : "text-amber-300"}>{item.metaAccessTokenEnc && item.ghlPrivateTokenEnc ? "Connections configured" : "Setup incomplete"}</p><p className="mt-1 text-zinc-600">{item.metaAdAccountId || "No Meta account"}</p></div></Link>)}
+          </div>
+        </div>
       ) : (
         <div className="m-5 grid min-h-80 place-items-center rounded-lg border border-[#272722] bg-[#0c0c0b] p-8 text-center sm:m-8">
           <div className="max-w-md">

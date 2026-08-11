@@ -9,13 +9,20 @@ const createClientSchema = z.object({
   metaAccessToken: z.string().trim().min(20, "Enter a valid Meta access token").max(2000),
   ghlLocationId: z.string().trim().max(120).optional(),
   ghlPrivateToken: z.string().trim().min(20, "Enter a valid GoHighLevel private integration token").max(2000),
+  metaPageId: z.string().trim().max(100).optional(),
+  metaLeadFormIds: z.string().trim().max(1000).optional(),
+  ghlCalendarId: z.string().trim().max(120).optional(),
   industry: z.string().trim().max(80).optional(),
+  targetDealCents: z.coerce.number().int().min(0).optional(),
+  monthlyRetainerCents: z.coerce.number().int().min(0).optional(),
+  revSharePercent: z.coerce.number().min(0).max(100).optional(),
+  setupFeeCents: z.coerce.number().int().min(0).optional(),
 });
 
 export async function GET() {
   const clients = await prisma.client.findMany({
     orderBy: { updatedAt: "desc" },
-    select: { id: true, name: true, metaAdAccountId: true, ghlLocationId: true, industry: true, lifecycle: true, updatedAt: true },
+    select: { id: true, name: true, metaAdAccountId: true, metaPageId: true, metaLeadFormIds: true, ghlLocationId: true, ghlCalendarId: true, industry: true, lifecycle: true, targetDealCents: true, monthlyRetainerCents: true, revSharePercent: true, setupFeeCents: true, updatedAt: true },
   });
   return NextResponse.json(clients);
 }
@@ -41,6 +48,13 @@ export async function POST(request: Request) {
       industry: parsed.data.industry,
       metaAdAccountId: parsed.data.metaAdAccountId,
       ghlLocationId: parsed.data.ghlLocationId,
+      metaPageId: parsed.data.metaPageId,
+      metaLeadFormIds: parsed.data.metaLeadFormIds,
+      ghlCalendarId: parsed.data.ghlCalendarId,
+      targetDealCents: parsed.data.targetDealCents,
+      monthlyRetainerCents: parsed.data.monthlyRetainerCents,
+      revSharePercent: parsed.data.revSharePercent,
+      setupFeeCents: parsed.data.setupFeeCents,
       metaAccessTokenEnc,
       ghlPrivateTokenEnc,
     },

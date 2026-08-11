@@ -71,10 +71,17 @@ model Client {
   name               String
   metaAdAccountId    String?
   metaAccessTokenEnc String?
+  metaPageId         String?
+  metaLeadFormIds    String?
   ghlLocationId      String?
   ghlPrivateTokenEnc String?
+  ghlCalendarId      String?
   industry           String?
   lifecycle          String   @default("active")
+  targetDealCents    Int?
+  monthlyRetainerCents Int?
+  revSharePercent    Float?
+  setupFeeCents      Int?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 }
