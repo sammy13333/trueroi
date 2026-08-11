@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { encryptSecret } from "@/lib/secrets";
 
 const createClientSchema = z.object({
   name: z.string().trim().min(1, "Client name is required").max(120),
   metaAdAccountId: z.string().trim().max(80).optional(),
+  metaAccessToken: z.string().trim().min(20, "Enter a valid Meta access token").max(2000),
   ghlLocationId: z.string().trim().max(120).optional(),
+  ghlPrivateToken: z.string().trim().min(20, "Enter a valid GoHighLevel private integration token").max(2000),
   industry: z.string().trim().max(80).optional(),
 });
 
@@ -22,6 +25,25 @@ export async function POST(request: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid client details", issues: parsed.error.issues }, { status: 400 });
   }
-  const client = await prisma.client.create({ data: parsed.data });
+  let metaAccessTokenEnc: string;
+  let ghlPrivateTokenEnc: string;
+  try {
+    [metaAccessTokenEnc, ghlPrivateTokenEnc] = await Promise.all([
+      encryptSecret(parsed.data.metaAccessToken),
+      encryptSecret(parsed.data.ghlPrivateToken),
+    ]);
+  } catch {
+    return NextResponse.json({ error: "Secure credential storage is unavailable." }, { status: 500 });
+  }
+  const client = await prisma.client.create({
+    data: {
+      name: parsed.data.name,
+      industry: parsed.data.industry,
+      metaAdAccountId: parsed.data.metaAdAccountId,
+      ghlLocationId: parsed.data.ghlLocationId,
+      metaAccessTokenEnc,
+      ghlPrivateTokenEnc,
+    },
+  });
   return NextResponse.json({ id: client.id, name: client.name }, { status: 201 });
 }

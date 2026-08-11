@@ -70,7 +70,9 @@ model Client {
   id                 String   @id @default(cuid())
   name               String
   metaAdAccountId    String?
+  metaAccessTokenEnc String?
   ghlLocationId      String?
+  ghlPrivateTokenEnc String?
   industry           String?
   lifecycle          String   @default("active")
   createdAt          DateTime @default(now())

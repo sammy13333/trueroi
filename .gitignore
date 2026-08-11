@@ -45,3 +45,6 @@ next-env.d.ts
 # local SQLite database
 *.db
 *.db-journal
+
+# generated local encryption material
+.trueroi-local-key

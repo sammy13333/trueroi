@@ -7,7 +7,7 @@ const inputClass = "mt-1.5 w-full rounded-md border border-[#302f2a] bg-[#090909
 
 export function ClientConnectionForm() {
   const router = useRouter();
-  const [form, setForm] = useState({ name: "", metaAdAccountId: "", ghlLocationId: "", industry: "" });
+  const [form, setForm] = useState({ name: "", metaAdAccountId: "", metaAccessToken: "", ghlLocationId: "", ghlPrivateToken: "", industry: "" });
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const update = (key: keyof typeof form) => (value: string) => setForm((current) => ({ ...current, [key]: value }));
@@ -45,10 +45,12 @@ export function ClientConnectionForm() {
         <h2 className="text-sm font-medium text-zinc-200">Delivery sources</h2>
         <p className="mt-1 text-xs text-zinc-600">Identifiers are stored per client and are never used in Agency ROI reporting.</p>
         <div className="mt-5 grid gap-4 sm:grid-cols-2">
-          <label className="text-xs font-medium text-zinc-400">Meta ad account ID<input value={form.metaAdAccountId} onChange={(event) => update("metaAdAccountId")(event.target.value)} placeholder="act_…" className={inputClass} /></label>
-          <label className="text-xs font-medium text-zinc-400">GHL location ID<input value={form.ghlLocationId} onChange={(event) => update("ghlLocationId")(event.target.value)} placeholder="Location ID" className={inputClass} /></label>
+          <label className="text-xs font-medium text-zinc-400">Meta ad account ID<input required value={form.metaAdAccountId} onChange={(event) => update("metaAdAccountId")(event.target.value)} placeholder="act_…" className={inputClass} /></label>
+          <label className="text-xs font-medium text-zinc-400">Meta access token<input required type="password" autoComplete="new-password" value={form.metaAccessToken} onChange={(event) => update("metaAccessToken")(event.target.value)} placeholder="Paste long-lived Meta token" className={inputClass} /></label>
+          <label className="text-xs font-medium text-zinc-400">GHL location ID<input required value={form.ghlLocationId} onChange={(event) => update("ghlLocationId")(event.target.value)} placeholder="Location ID" className={inputClass} /></label>
+          <label className="text-xs font-medium text-zinc-400">GHL private integration token<input required type="password" autoComplete="new-password" value={form.ghlPrivateToken} onChange={(event) => update("ghlPrivateToken")(event.target.value)} placeholder="Paste GHL private integration token" className={inputClass} /></label>
         </div>
-        <p className="mt-4 text-[11px] leading-5 text-zinc-600">Secure API-token entry and live validation are added with the encrypted connector implementation. No secrets are collected or displayed by this form.</p>
+        <p className="mt-4 text-[11px] leading-5 text-zinc-600">Tokens are encrypted before being stored and are never displayed after saving. Connection validation and manual syncing are available from the client workspace.</p>
       </section>
       {error && <p className="text-xs text-red-400">{error}</p>}
       <div className="flex justify-end"><button disabled={saving} className="rounded-md bg-[#d4af37] px-4 py-2.5 text-xs font-semibold text-black hover:bg-[#e2c457] disabled:opacity-60">{saving ? "Creating…" : "Create client workspace"}</button></div>
