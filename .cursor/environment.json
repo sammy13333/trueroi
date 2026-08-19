@@ -1,0 +1,4 @@
+{
+  "install": "npm install && npx prisma generate",
+  "start": "DATABASE_URL='file:./dev.db' npx prisma migrate deploy && npm run dev -- --hostname 0.0.0.0"
+}
