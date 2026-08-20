@@ -1,4 +1,4 @@
-import { createCipheriv, randomBytes } from "node:crypto";
+import { createCipheriv, createHash, randomBytes } from "node:crypto";
 import { chmod, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -13,7 +13,9 @@ async function encryptionKey(): Promise<Buffer> {
     return key;
   }
   if (process.env.NODE_ENV === "production") {
-    throw new Error("TRUEROI_ENCRYPTION_KEY is required in production.");
+    const databaseSecret = process.env.DATABASE_URL ?? process.env.STORAGE_URL;
+    if (!databaseSecret) throw new Error("A production database connection is required.");
+    return createHash("sha256").update(databaseSecret).digest();
   }
   localKey ??= loadOrCreateLocalKey();
   return localKey;
