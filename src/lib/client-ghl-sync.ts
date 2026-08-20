@@ -243,7 +243,7 @@ async function fetchOpportunities(locationId: string, token: string): Promise<Gh
 }
 
 function contactFromResponse(payload: GhlContactResponse): GhlContact | undefined {
-  return "contact" in payload ? payload.contact : payload;
+  return "contact" in payload ? payload.contact : payload as GhlContact;
 }
 
 async function fetchOpportunityContacts(opportunities: GhlOpportunity[], token: string) {
