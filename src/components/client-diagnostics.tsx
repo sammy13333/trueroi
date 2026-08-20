@@ -2,8 +2,11 @@ import Link from "next/link";
 import { AppShell, PageHeader } from "@/components/app-shell";
 import { ClientGhlSyncButton } from "@/components/client-ghl-sync-button";
 import { ClientMetaSyncButton } from "@/components/client-meta-sync-button";
+import { ClientAttributionTrace } from "@/components/client-attribution-trace";
 import { ClientSelector, selectedClientId } from "@/components/client-selector";
 import { prisma } from "@/lib/prisma";
+import { cookies } from "next/headers";
+import { readSession, SESSION_COOKIE } from "@/lib/auth";
 
 type SearchParams = Record<string, string | string[] | undefined>;
 
@@ -27,6 +30,9 @@ export async function ClientDiagnostics({
     select: { id: true, name: true },
   });
   const clientId = selectedClientId(clients, requestedClientId);
+  const session = await readSession((await cookies()).get(SESSION_COOKIE)?.value);
+  const user = session ? await prisma.user.findUnique({ where: { id: session.userId }, select: { role: true } }) : null;
+  const isOwner = user?.role === "OWNER";
 
   if (!clientId) {
     return (
@@ -129,6 +135,7 @@ export async function ClientDiagnostics({
             <SourceCheck label="GoHighLevel CRM" value={`${count(client._count.pipelines)} pipelines · ${count(client._count.ghlContacts)} contacts · ${count(client._count.ghlOpportunities)} opportunities`} detail={`${syncDetail(latestGhlSync)} · ${count(client._count.crmLeads)} canonical contacts, ${count(unmatchedLeads)} unmatched`} />
           </div>
         </section>
+        {isOwner && <ClientAttributionTrace clientId={client.id} />}
       </div>
     </AppShell>
   );

@@ -8,7 +8,7 @@ const GHL_PAGE_SIZE = 100;
 
 type GhlPipelineStage = { id?: string; name?: string };
 type GhlPipeline = { id?: string; name?: string; stages?: GhlPipelineStage[] };
-type GhlContact = {
+export type GhlContact = {
   id?: string;
   firstName?: string;
   lastName?: string;
@@ -143,7 +143,8 @@ function customFieldEvidence(value: unknown, scope: AttributionEvidence["scope"]
   return evidence;
 }
 
-function extractAttributionEvidence(record: GhlOpportunity | GhlContact, scope: AttributionEvidence["scope"]): AttributionEvidence[] {
+/** Shared by diagnostics so traces use the same extraction behavior as GHL syncs. */
+export function extractAttributionEvidence(record: GhlOpportunity | GhlContact, scope: AttributionEvidence["scope"]): AttributionEvidence[] {
   const evidence: AttributionEvidence[] = [];
   const add = (field: AttributionField, source: string, value: unknown) => {
     const storedValue = safeAttributionValue(value);
