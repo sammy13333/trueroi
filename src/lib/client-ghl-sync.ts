@@ -30,6 +30,21 @@ type GhlOpportunity = {
   createdAt?: string;
   updatedAt?: string;
   lastStatusChangeAt?: string;
+  attributionSource?: string;
+  source?: string;
+  utmSource?: string;
+  utmMedium?: string;
+  utmCampaign?: string;
+  utmContent?: string;
+  utmTerm?: string;
+  attributions?: {
+    source?: string;
+    utmSource?: string;
+    utmMedium?: string;
+    utmCampaign?: string;
+    utmContent?: string;
+    utmTerm?: string;
+  };
 };
 type GhlOpportunityPage = {
   opportunities?: GhlOpportunity[];
@@ -66,6 +81,18 @@ function parseDate(value: string | undefined): Date | null {
 function cents(value: number | string | undefined): number | null {
   const amount = Number(value);
   return Number.isFinite(amount) ? Math.round(amount * 100) : null;
+}
+
+function attribution(opportunity: GhlOpportunity) {
+  const values = opportunity.attributions;
+  return {
+    attributionSource: asString(opportunity.attributionSource) ?? asString(opportunity.source) ?? asString(values?.source),
+    utmSource: asString(opportunity.utmSource) ?? asString(values?.utmSource),
+    utmMedium: asString(opportunity.utmMedium) ?? asString(values?.utmMedium),
+    utmCampaign: asString(opportunity.utmCampaign) ?? asString(values?.utmCampaign),
+    utmContent: asString(opportunity.utmContent) ?? asString(values?.utmContent),
+    utmTerm: asString(opportunity.utmTerm) ?? asString(values?.utmTerm),
+  };
 }
 
 function ghlErrorMessage(payload: unknown, fallback: string): string {
@@ -199,6 +226,7 @@ export async function syncClientGhl(clientId: string): Promise<ClientGhlSyncResu
 
       const pipeline = opportunity.pipelineId ? pipelineIds.get(opportunity.pipelineId) : undefined;
       const stage = pipeline?.stages.find((item) => item.id === opportunity.pipelineStageId);
+      const attributionFields = attribution(opportunity);
       await prisma.clientGhlOpportunity.upsert({
         where: { clientId_ghlId: { clientId, ghlId } },
         create: {
@@ -211,6 +239,7 @@ export async function syncClientGhl(clientId: string): Promise<ClientGhlSyncResu
           name: opportunity.name,
           status: opportunity.status,
           monetaryValueCents: cents(opportunity.monetaryValue),
+          ...attributionFields,
           sourceCreatedAt: parseDate(opportunity.createdAt),
           sourceUpdatedAt: parseDate(opportunity.updatedAt),
           lastStatusChangeAt: parseDate(opportunity.lastStatusChangeAt),
@@ -223,6 +252,7 @@ export async function syncClientGhl(clientId: string): Promise<ClientGhlSyncResu
           name: opportunity.name,
           status: opportunity.status,
           monetaryValueCents: cents(opportunity.monetaryValue),
+          ...attributionFields,
           sourceCreatedAt: parseDate(opportunity.createdAt),
           sourceUpdatedAt: parseDate(opportunity.updatedAt),
           lastStatusChangeAt: parseDate(opportunity.lastStatusChangeAt),

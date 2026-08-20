@@ -143,6 +143,12 @@ model ClientGhlOpportunity {
   name               String?
   status             String?
   monetaryValueCents Int?
+  attributionSource  String?
+  utmSource          String?
+  utmMedium          String?
+  utmCampaign        String?
+  utmContent         String?
+  utmTerm            String?
   sourceCreatedAt    DateTime?
   sourceUpdatedAt    DateTime?
   lastStatusChangeAt DateTime?
