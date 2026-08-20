@@ -135,6 +135,7 @@ model ClientGhlContact {
   sourceCreatedAt DateTime?
   sourceUpdatedAt DateTime?
   opportunities   ClientGhlOpportunity[]
+  crmLead         ClientCrmLead?
   createdAt       DateTime               @default(now())
   updatedAt       DateTime               @updatedAt
 
