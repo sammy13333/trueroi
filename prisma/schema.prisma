@@ -144,6 +144,7 @@ model ClientMetaCampaign {
   objective       String?
   startsAt        DateTime?
   endsAt          DateTime?
+  metaCreatedAt   DateTime?
   adsets          ClientMetaAdset[]
   metrics         ClientDailyMetaMetric[]
   createdAt       DateTime                @default(now())
@@ -162,6 +163,8 @@ model ClientMetaAdset {
   campaign   ClientMetaCampaign      @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   name       String
   status     String?
+  startsAt   DateTime?
+  metaCreatedAt DateTime?
   ads        ClientMetaAd[]
   metrics    ClientDailyMetaMetric[]
   createdAt  DateTime                @default(now())
@@ -180,6 +183,7 @@ model ClientMetaAd {
   adsetId   String
   adset     ClientMetaAdset         @relation(fields: [adsetId], references: [id], onDelete: Cascade)
   name      String
+  metaCreatedAt DateTime?
   status    String?
   metrics   ClientDailyMetaMetric[]
   createdAt DateTime                @default(now())

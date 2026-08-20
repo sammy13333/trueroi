@@ -13,6 +13,7 @@ type MetaCampaign = {
   objective?: string;
   start_time?: string;
   stop_time?: string;
+  created_time?: string;
 };
 
 type MetaAdset = {
@@ -20,6 +21,8 @@ type MetaAdset = {
   campaign_id?: string;
   name?: string;
   status?: string;
+  start_time?: string;
+  created_time?: string;
 };
 
 type MetaAd = {
@@ -27,6 +30,7 @@ type MetaAd = {
   adset_id?: string;
   name?: string;
   status?: string;
+  created_time?: string;
 };
 
 type MetaInsight = {
@@ -177,9 +181,9 @@ export async function syncClientMeta(clientId: string): Promise<ClientMetaSyncRe
 
     const accountId = client.metaAdAccountId.startsWith("act_") ? client.metaAdAccountId : `act_${client.metaAdAccountId}`;
     const [campaigns, adsets, ads] = await Promise.all([
-      metaCollection<MetaCampaign>(`${accountId}/campaigns`, "id,name,status,effective_status,objective,start_time,stop_time", token),
-      metaCollection<MetaAdset>(`${accountId}/adsets`, "id,campaign_id,name,status", token),
-      metaCollection<MetaAd>(`${accountId}/ads`, "id,adset_id,name,status", token),
+      metaCollection<MetaCampaign>(`${accountId}/campaigns`, "id,name,status,effective_status,objective,start_time,stop_time,created_time", token),
+      metaCollection<MetaAdset>(`${accountId}/adsets`, "id,campaign_id,name,status,start_time,created_time", token),
+      metaCollection<MetaAd>(`${accountId}/ads`, "id,adset_id,name,status,created_time", token),
     ]);
 
     const campaignIds = new Map<string, string>();
@@ -195,6 +199,7 @@ export async function syncClientMeta(clientId: string): Promise<ClientMetaSyncRe
           objective: campaign.objective,
           startsAt: parseDate(campaign.start_time),
           endsAt: parseDate(campaign.stop_time),
+          metaCreatedAt: parseDate(campaign.created_time),
         },
         update: {
           name: campaign.name ?? campaign.id,
@@ -203,6 +208,7 @@ export async function syncClientMeta(clientId: string): Promise<ClientMetaSyncRe
           objective: campaign.objective,
           startsAt: parseDate(campaign.start_time),
           endsAt: parseDate(campaign.stop_time),
+          metaCreatedAt: parseDate(campaign.created_time),
         },
         select: { id: true },
       });
@@ -214,8 +220,14 @@ export async function syncClientMeta(clientId: string): Promise<ClientMetaSyncRe
     await inBatches(storedAdsets, async (adset) => {
       const record = await prisma.clientMetaAdset.upsert({
         where: { clientId_metaId: { clientId, metaId: adset.id } },
-        create: { clientId, metaId: adset.id, campaignId: campaignIds.get(adset.campaign_id!)!, name: adset.name ?? adset.id, status: adset.status },
-        update: { campaignId: campaignIds.get(adset.campaign_id!)!, name: adset.name ?? adset.id, status: adset.status },
+        create: {
+          clientId, metaId: adset.id, campaignId: campaignIds.get(adset.campaign_id!)!, name: adset.name ?? adset.id, status: adset.status,
+          startsAt: parseDate(adset.start_time), metaCreatedAt: parseDate(adset.created_time),
+        },
+        update: {
+          campaignId: campaignIds.get(adset.campaign_id!)!, name: adset.name ?? adset.id, status: adset.status,
+          startsAt: parseDate(adset.start_time), metaCreatedAt: parseDate(adset.created_time),
+        },
         select: { id: true },
       });
       adsetIds.set(adset.id, record.id);
@@ -226,8 +238,14 @@ export async function syncClientMeta(clientId: string): Promise<ClientMetaSyncRe
     await inBatches(storedAds, async (ad) => {
       const record = await prisma.clientMetaAd.upsert({
         where: { clientId_metaId: { clientId, metaId: ad.id } },
-        create: { clientId, metaId: ad.id, adsetId: adsetIds.get(ad.adset_id!)!, name: ad.name ?? ad.id, status: ad.status },
-        update: { adsetId: adsetIds.get(ad.adset_id!)!, name: ad.name ?? ad.id, status: ad.status },
+        create: {
+          clientId, metaId: ad.id, adsetId: adsetIds.get(ad.adset_id!)!, name: ad.name ?? ad.id, status: ad.status,
+          metaCreatedAt: parseDate(ad.created_time),
+        },
+        update: {
+          adsetId: adsetIds.get(ad.adset_id!)!, name: ad.name ?? ad.id, status: ad.status,
+          metaCreatedAt: parseDate(ad.created_time),
+        },
         select: { id: true },
       });
       adIds.set(ad.id, record.id);

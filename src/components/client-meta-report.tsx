@@ -38,6 +38,7 @@ type ReportRow = {
   status: string | null;
   parent: string | null;
   detail: string | null;
+  metaTimestamp: Date | null;
   metrics: Metric[];
 };
 
@@ -122,6 +123,10 @@ function optionalNumber(value: number | null) {
 
 function ctr(metrics: Metric) {
   return metrics.impressions > 0 ? `${((metrics.clicks / metrics.impressions) * 100).toFixed(2)}%` : "—";
+}
+
+function costPerMetaLead(metrics: Metric) {
+  return metrics.leads > 0 ? currency(metrics.spendCents / metrics.leads) : "—";
 }
 
 function date(value: Date | null) {
@@ -230,6 +235,7 @@ export async function ClientMetaReport({
                     <th className="numeric px-3 py-3 font-medium">Link clicks</th>
                     <th className="numeric px-3 py-3 font-medium">CTR</th>
                     <th className="numeric px-4 py-3 font-medium">Meta lead forms (delivery)</th>
+                    <th className="numeric px-4 py-3 font-medium">Cost per Meta Lead</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -256,7 +262,7 @@ export async function ClientMetaReport({
 }
 
 function MetricCells({ metrics }: { metrics: Metric }) {
-  return <><td className="numeric px-3 py-3">{currency(metrics.spendCents)}</td><td className="numeric px-3 py-3">{number(metrics.impressions)}</td><td className="numeric px-3 py-3">{number(metrics.reach)}</td><td className="numeric px-3 py-3">{number(metrics.clicks)}</td><td className="numeric px-3 py-3">{optionalNumber(metrics.linkClicks)}</td><td className="numeric px-3 py-3">{ctr(metrics)}</td><td className="numeric px-4 py-3">{number(metrics.leads)}</td></>;
+  return <><td className="numeric px-3 py-3">{currency(metrics.spendCents)}</td><td className="numeric px-3 py-3">{number(metrics.impressions)}</td><td className="numeric px-3 py-3">{number(metrics.reach)}</td><td className="numeric px-3 py-3">{number(metrics.clicks)}</td><td className="numeric px-3 py-3">{optionalNumber(metrics.linkClicks)}</td><td className="numeric px-3 py-3">{ctr(metrics)}</td><td className="numeric px-4 py-3">{number(metrics.leads)}</td><td className="numeric px-4 py-3">{costPerMetaLead(metrics)}</td></>;
 }
 
 function CoverageCard({ label, value, detail }: { label: string; value: string; detail: string }) {
@@ -292,7 +298,7 @@ function DateFilters({ clientId, path, range, parentId, parentKey }: { clientId:
 
 function Status({ status }: { status: string | null }) {
   const normalized = status?.toUpperCase();
-  const color = normalized === "ACTIVE" ? "bg-emerald-400" : normalized === "PAUSED" ? "bg-cyan-400" : normalized === "DRAFT" ? "bg-zinc-500" : "bg-zinc-600";
+  const color = normalized === "ACTIVE" ? "bg-emerald-800" : normalized === "PAUSED" ? "bg-yellow-400" : normalized === "DRAFT" ? "bg-zinc-500" : "bg-zinc-600";
   return <span className="inline-flex items-center gap-1.5"><span aria-hidden className={`h-2 w-2 rounded-full ${color}`} /><span>{status ?? "Unknown"}</span></span>;
 }
 
@@ -310,21 +316,38 @@ async function loadRows(clientId: string, level: ReportLevel, range: DateRange, 
   const metricWhere = { level, date: { gte: range.gte, lt: range.lt } };
   if (level === "CAMPAIGN") {
     const campaigns = await prisma.clientMetaCampaign.findMany({
-      where: { clientId }, orderBy: { createdAt: "desc" },
-      select: { id: true, name: true, status: true, effectiveStatus: true, objective: true, metrics: { where: metricWhere, select: metricSelect } },
+      where: { clientId },
+      select: { id: true, name: true, status: true, effectiveStatus: true, objective: true, startsAt: true, metaCreatedAt: true, metrics: { where: metricWhere, select: metricSelect } },
     });
-    return campaigns.map((campaign) => ({ id: campaign.id, name: campaign.name, status: campaign.effectiveStatus ?? campaign.status, parent: null, detail: campaign.objective, metrics: campaign.metrics }));
+    return sortRowsNewest(campaigns.map((campaign) => ({
+      id: campaign.id, name: campaign.name, status: campaign.effectiveStatus ?? campaign.status, parent: null, detail: campaign.objective,
+      metaTimestamp: campaign.startsAt ?? campaign.metaCreatedAt, metrics: campaign.metrics,
+    })));
   }
   if (level === "ADSET") {
     const adsets = await prisma.clientMetaAdset.findMany({
-      where: { clientId, ...(parent.campaignId ? { campaignId: parent.campaignId } : {}) }, orderBy: { createdAt: "desc" },
-      select: { id: true, name: true, status: true, campaign: { select: { name: true } }, metrics: { where: metricWhere, select: metricSelect } },
+      where: { clientId, ...(parent.campaignId ? { campaignId: parent.campaignId } : {}) },
+      select: { id: true, name: true, status: true, startsAt: true, metaCreatedAt: true, campaign: { select: { name: true } }, metrics: { where: metricWhere, select: metricSelect } },
     });
-    return adsets.map((adset) => ({ id: adset.id, name: adset.name, status: adset.status, parent: adset.campaign.name, detail: null, metrics: adset.metrics }));
+    return sortRowsNewest(adsets.map((adset) => ({
+      id: adset.id, name: adset.name, status: adset.status, parent: adset.campaign.name, detail: null,
+      metaTimestamp: adset.startsAt ?? adset.metaCreatedAt, metrics: adset.metrics,
+    })));
   }
   const ads = await prisma.clientMetaAd.findMany({
-    where: { clientId, ...(parent.adsetId ? { adsetId: parent.adsetId } : {}) }, orderBy: { createdAt: "desc" },
-    select: { id: true, name: true, status: true, adset: { select: { name: true, campaign: { select: { name: true } } } }, metrics: { where: metricWhere, select: metricSelect } },
+    where: { clientId, ...(parent.adsetId ? { adsetId: parent.adsetId } : {}) },
+    select: { id: true, name: true, status: true, metaCreatedAt: true, adset: { select: { name: true, campaign: { select: { name: true } } } }, metrics: { where: metricWhere, select: metricSelect } },
   });
-  return ads.map((ad) => ({ id: ad.id, name: ad.name, status: ad.status, parent: `${ad.adset.campaign.name} / ${ad.adset.name}`, detail: null, metrics: ad.metrics }));
+  return sortRowsNewest(ads.map((ad) => ({
+    id: ad.id, name: ad.name, status: ad.status, parent: `${ad.adset.campaign.name} / ${ad.adset.name}`, detail: null,
+    metaTimestamp: ad.metaCreatedAt, metrics: ad.metrics,
+  })));
+}
+
+function sortRowsNewest(rows: ReportRow[]) {
+  return rows.sort((left, right) => {
+    const leftTimestamp = left.metaTimestamp?.getTime() ?? 0;
+    const rightTimestamp = right.metaTimestamp?.getTime() ?? 0;
+    return rightTimestamp - leftTimestamp || left.name.localeCompare(right.name);
+  });
 }
