@@ -4,6 +4,7 @@ import { ClientConnectionForm } from "@/components/client-connection-form";
 import { ClientSyncAllButton } from "@/components/client-sync-all-button";
 import { ClientMetaSyncButton } from "@/components/client-meta-sync-button";
 import { FetchPipelinesButton } from "@/components/fetch-pipelines-button";
+import { ClientMetaReport } from "@/components/client-meta-report";
 import { prisma } from "@/lib/prisma";
 
 const clientTitles: Record<string, [string, string]> = {
@@ -19,11 +20,17 @@ const clientTitles: Record<string, [string, string]> = {
 
 export default async function ClientRoutePage({
   params,
+  searchParams,
 }: {
   params: Promise<{ segments: string[] }>;
+  searchParams: Promise<{ clientId?: string | string[] }>;
 }) {
   const { segments } = await params;
   const [section, detail] = segments;
+  const { clientId } = await searchParams;
+  if (section === "campaigns" || section === "adsets" || section === "ads") {
+    return <ClientMetaReport level={section === "campaigns" ? "CAMPAIGN" : section === "adsets" ? "ADSET" : "AD"} requestedClientId={clientId} />;
+  }
   const [title, description] = clientTitles[section] ?? [
     "Client ROI",
     "This route is ready for the client reporting workspace.",
