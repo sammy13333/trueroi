@@ -242,6 +242,10 @@ async function fetchOpportunities(locationId: string, token: string): Promise<Gh
   return opportunities;
 }
 
+function contactFromResponse(payload: GhlContactResponse): GhlContact | undefined {
+  return "contact" in payload ? payload.contact : payload;
+}
+
 async function fetchOpportunityContacts(opportunities: GhlOpportunity[], token: string) {
   const contactIds = [...new Set(opportunities.flatMap((opportunity) => {
     const id = asString(opportunity.contact?.id) ?? asString(opportunity.contactId);
@@ -252,7 +256,7 @@ async function fetchOpportunityContacts(opportunities: GhlOpportunity[], token: 
     const batch = await Promise.all(contactIds.slice(start, start + 10).map(async (contactId) => {
       try {
         const payload = await ghlGet<GhlContactResponse>(`/contacts/${contactId}`, token, {});
-        const contact = "contact" in payload ? payload.contact : payload;
+        const contact = contactFromResponse(payload);
         return contact && asString(contact.id) ? contact : null;
       } catch {
         return null;
