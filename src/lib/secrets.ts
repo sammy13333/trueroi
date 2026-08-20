@@ -1,4 +1,4 @@
-import { createCipheriv, createHash, randomBytes } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
 import { chmod, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -38,4 +38,12 @@ export async function encryptSecret(value: string): Promise<string> {
   const cipher = createCipheriv("aes-256-gcm", await encryptionKey(), iv);
   const encrypted = Buffer.concat([cipher.update(value, "utf8"), cipher.final()]);
   return `${iv.toString("base64")}.${cipher.getAuthTag().toString("base64")}.${encrypted.toString("base64")}`;
+}
+
+export async function decryptSecret(value: string): Promise<string> {
+  const [ivText, tagText, cipherText] = value.split(".");
+  if (!ivText || !tagText || !cipherText) throw new Error("Stored credential is invalid.");
+  const decipher = createDecipheriv("aes-256-gcm", await encryptionKey(), Buffer.from(ivText, "base64"));
+  decipher.setAuthTag(Buffer.from(tagText, "base64"));
+  return Buffer.concat([decipher.update(Buffer.from(cipherText, "base64")), decipher.final()]).toString("utf8");
 }

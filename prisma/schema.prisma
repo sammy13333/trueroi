@@ -85,8 +85,21 @@ model Client {
   ownerId            String?
   owner              User?    @relation(fields: [ownerId], references: [id], onDelete: SetNull)
   syncLogs           ClientSyncLog[]
+  pipelines          ClientPipeline[]
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
+}
+
+model ClientPipeline {
+  id         String   @id @default(cuid())
+  clientId   String
+  client     Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  ghlId      String
+  name       String
+  stagesJson String   @default("[]")
+  selected   Boolean  @default(false)
+  updatedAt  DateTime @updatedAt
+  @@unique([clientId, ghlId])
 }
 
 model User {

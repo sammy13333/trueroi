@@ -2,6 +2,7 @@ import Link from "next/link";
 import { AppShell, FilterBar, PageHeader } from "@/components/app-shell";
 import { ClientConnectionForm } from "@/components/client-connection-form";
 import { ClientSyncAllButton } from "@/components/client-sync-all-button";
+import { FetchPipelinesButton } from "@/components/fetch-pipelines-button";
 import { prisma } from "@/lib/prisma";
 
 const clientTitles: Record<string, [string, string]> = {
@@ -30,7 +31,7 @@ export default async function ClientRoutePage({
   const isClientDetail = section === "clients" && detail && detail !== "new";
   const client = isClientDetail ? await prisma.client.findUnique({
     where: { id: detail },
-    select: { id: true, name: true, industry: true, metaAdAccountId: true, ghlLocationId: true, metaAccessTokenEnc: true, ghlPrivateTokenEnc: true, lifecycle: true },
+    select: { id: true, name: true, industry: true, metaAdAccountId: true, ghlLocationId: true, metaAccessTokenEnc: true, ghlPrivateTokenEnc: true, lifecycle: true, pipelines: { select: { id: true, name: true } } },
   }) : null;
   const clients = section === "clients" && !detail ? await prisma.client.findMany({
     orderBy: { updatedAt: "desc" },
@@ -57,6 +58,7 @@ export default async function ClientRoutePage({
               <div className="rounded-md border bg-[#090909] p-3"><p className="text-[11px] uppercase tracking-wide text-zinc-600">Meta</p><p className="mt-2 text-sm text-zinc-300">{client.metaAdAccountId || "No ad account"}</p><p className={`mt-1 text-xs ${client.metaAccessTokenEnc ? "text-emerald-400" : "text-amber-300"}`}>{client.metaAccessTokenEnc ? "Access token configured" : "Token missing"}</p></div>
               <div className="rounded-md border bg-[#090909] p-3"><p className="text-[11px] uppercase tracking-wide text-zinc-600">GoHighLevel</p><p className="mt-2 text-sm text-zinc-300">{client.ghlLocationId || "No location"}</p><p className={`mt-1 text-xs ${client.ghlPrivateTokenEnc ? "text-emerald-400" : "text-amber-300"}`}>{client.ghlPrivateTokenEnc ? "Private token configured" : "Token missing"}</p></div>
             </div>
+            <div className="mt-5 border-t pt-5"><FetchPipelinesButton clientId={client.id} />{client.pipelines.length > 0 && <p className="mt-3 text-xs text-emerald-400">Imported pipelines: {client.pipelines.map((pipeline) => pipeline.name).join(", ")}</p>}</div>
           </section>
         </div>
       ) : section === "clients" ? (
