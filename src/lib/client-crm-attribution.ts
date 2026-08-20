@@ -51,16 +51,22 @@ function parseEvidence(value: string): AttributionEvidence[] {
   }
 }
 
+function normalized(value: string | null | undefined) {
+  const result = value?.trim().toLocaleLowerCase();
+  return result || null;
+}
+
 function savedEvidence(opportunity: AttributionOpportunity): AttributionEvidence[] {
   const raw = parseEvidence(opportunity.attributionEvidenceJson);
-  const legacy = [
+  const fields: Array<[string, string | null]> = [
     ["campaignMetaId", opportunity.campaignMetaId],
     ["adsetMetaId", opportunity.adsetMetaId],
     ["adMetaId", opportunity.adMetaId],
     ["utmCampaign", opportunity.utmCampaign],
     ["utmContent", opportunity.utmContent],
     ["utmTerm", opportunity.utmTerm],
-  ].flatMap(([field, value]) => typeof value === "string" && value.trim()
+  ];
+  const legacy = fields.flatMap<AttributionEvidence>(([field, value]) => typeof value === "string" && value.trim()
     ? [{ scope: "opportunity" as const, field, source: `stored.${field}`, value: value.trim() }]
     : []);
   return [...raw, ...legacy].filter((item, index, items) => items.findIndex((candidate) => candidate.field === item.field && candidate.source === item.source && candidate.value === item.value) === index);
