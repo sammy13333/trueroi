@@ -64,6 +64,7 @@ type GhlOpportunityPage = {
   opportunities?: GhlOpportunity[];
   meta?: { startAfterId?: string | null };
 };
+type GhlContactResponse = GhlContact | { contact?: GhlContact };
 
 class GhlFailure extends Error {
   constructor(message: string, readonly statusCode: number) {
@@ -241,6 +242,27 @@ async function fetchOpportunities(locationId: string, token: string): Promise<Gh
   return opportunities;
 }
 
+async function fetchOpportunityContacts(opportunities: GhlOpportunity[], token: string) {
+  const contactIds = [...new Set(opportunities.flatMap((opportunity) => {
+    const id = asString(opportunity.contact?.id) ?? asString(opportunity.contactId);
+    return id ? [id] : [];
+  }))];
+  const contacts = new Map<string, GhlContact>();
+  for (let start = 0; start < contactIds.length; start += 10) {
+    const batch = await Promise.all(contactIds.slice(start, start + 10).map(async (contactId) => {
+      try {
+        const payload = await ghlGet<GhlContactResponse>(`/contacts/${contactId}`, token, {});
+        const contact = "contact" in payload ? payload.contact : payload;
+        return contact && asString(contact.id) ? contact : null;
+      } catch {
+        return null;
+      }
+    }));
+    for (const contact of batch) if (contact?.id) contacts.set(contact.id, contact);
+  }
+  return contacts;
+}
+
 export async function syncClientGhl(clientId: string): Promise<ClientGhlSyncResult | null> {
   const client = await prisma.client.findUnique({
     where: { id: clientId },
@@ -268,6 +290,7 @@ export async function syncClientGhl(clientId: string): Promise<ClientGhlSyncResu
       ghlGet<{ pipelines?: GhlPipeline[] }>("/opportunities/pipelines", token, { locationId: client.ghlLocationId }),
       fetchOpportunities(client.ghlLocationId, token),
     ]);
+    const detailedContacts = await fetchOpportunityContacts(opportunities, token);
     const pipelines = (Array.isArray(pipelinePayload.pipelines) ? pipelinePayload.pipelines : []).filter(
       (pipeline): pipeline is GhlPipeline & { id: string } => Boolean(asString(pipeline.id)),
     );
@@ -292,7 +315,8 @@ export async function syncClientGhl(clientId: string): Promise<ClientGhlSyncResu
 
       const embeddedContact = opportunity.contact;
       const contactGhlId = asString(embeddedContact?.id) ?? asString(opportunity.contactId);
-      const contactAttributionEvidence = embeddedContact ? extractAttributionEvidence(embeddedContact, "contact") : [];
+      const contactDetails = (contactGhlId ? detailedContacts.get(contactGhlId) : undefined) ?? embeddedContact;
+      const contactAttributionEvidence = contactDetails ? extractAttributionEvidence(contactDetails, "contact") : [];
       let contactId: string | null = null;
       if (contactGhlId) {
         const contact = await prisma.clientGhlContact.upsert({
@@ -300,24 +324,24 @@ export async function syncClientGhl(clientId: string): Promise<ClientGhlSyncResu
           create: {
             clientId,
             ghlId: contactGhlId,
-            firstName: embeddedContact?.firstName,
-            lastName: embeddedContact?.lastName,
-            email: embeddedContact?.email,
-            phone: embeddedContact?.phone,
-            tagsJson: tagsJson(embeddedContact?.tags),
+            firstName: contactDetails?.firstName,
+            lastName: contactDetails?.lastName,
+            email: contactDetails?.email,
+            phone: contactDetails?.phone,
+            tagsJson: tagsJson(contactDetails?.tags),
             attributionEvidenceJson: JSON.stringify(contactAttributionEvidence),
-            sourceCreatedAt: parseDate(embeddedContact?.dateAdded ?? embeddedContact?.createdAt),
-            sourceUpdatedAt: parseDate(embeddedContact?.dateUpdated ?? embeddedContact?.updatedAt),
+            sourceCreatedAt: parseDate(contactDetails?.dateAdded ?? contactDetails?.createdAt),
+            sourceUpdatedAt: parseDate(contactDetails?.dateUpdated ?? contactDetails?.updatedAt),
           },
           update: {
-            firstName: embeddedContact?.firstName,
-            lastName: embeddedContact?.lastName,
-            email: embeddedContact?.email,
-            phone: embeddedContact?.phone,
-            tagsJson: tagsJson(embeddedContact?.tags),
+            firstName: contactDetails?.firstName,
+            lastName: contactDetails?.lastName,
+            email: contactDetails?.email,
+            phone: contactDetails?.phone,
+            tagsJson: tagsJson(contactDetails?.tags),
             attributionEvidenceJson: JSON.stringify(contactAttributionEvidence),
-            sourceCreatedAt: parseDate(embeddedContact?.dateAdded ?? embeddedContact?.createdAt),
-            sourceUpdatedAt: parseDate(embeddedContact?.dateUpdated ?? embeddedContact?.updatedAt),
+            sourceCreatedAt: parseDate(contactDetails?.dateAdded ?? contactDetails?.createdAt),
+            sourceUpdatedAt: parseDate(contactDetails?.dateUpdated ?? contactDetails?.updatedAt),
           },
           select: { id: true },
         });
@@ -327,7 +351,7 @@ export async function syncClientGhl(clientId: string): Promise<ClientGhlSyncResu
 
       const pipeline = opportunity.pipelineId ? pipelineIds.get(opportunity.pipelineId) : undefined;
       const stage = pipeline?.stages.find((item) => item.id === opportunity.pipelineStageId);
-      const attributionFields = attribution(opportunity, embeddedContact);
+      const attributionFields = attribution(opportunity, contactDetails);
       await prisma.clientGhlOpportunity.upsert({
         where: { clientId_ghlId: { clientId, ghlId } },
         create: {
