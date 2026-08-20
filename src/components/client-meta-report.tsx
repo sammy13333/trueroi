@@ -123,7 +123,7 @@ function resolveDateRange(searchParams: ReportSearchParams): DateRange {
 }
 
 function sumMetrics(metrics: Metric[]): TotalMetric {
-  return metrics.reduce(
+  return metrics.reduce<TotalMetric>(
     (total, metric) => ({
       spendCents: total.spendCents + metric.spendCents,
       impressions: total.impressions + metric.impressions,
@@ -217,7 +217,7 @@ export async function ClientMetaReport({
   const sortedRows = rows
     .map((row, index) => ({ row, metrics: rowTotals[index] }))
     .sort((left, right) => compareRows(left.row, left.metrics, right.row, right.metrics, sort));
-  const totals = rowTotals.reduce(
+  const totals = rowTotals.reduce<TotalMetric>(
     (total, row) => ({
       spendCents: total.spendCents + row.spendCents,
       impressions: total.impressions + row.impressions,
