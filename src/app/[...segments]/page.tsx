@@ -9,6 +9,7 @@ import { ClientGhlLeadTracking } from "@/components/client-ghl-lead-tracking";
 import { ClientInsights } from "@/components/client-insights";
 import { ClientReportPlaceholder } from "@/components/client-report-placeholder";
 import { ClientGhlSyncButton } from "@/components/client-ghl-sync-button";
+import { ClientDiagnostics } from "@/components/client-diagnostics";
 import { prisma } from "@/lib/prisma";
 
 const clientTitles: Record<string, [string, string]> = {
@@ -47,6 +48,9 @@ export default async function ClientRoutePage({
   }
   if (section === "insights") {
     return <ClientInsights requestedClientId={filters.clientId} />;
+  }
+  if (section === "diagnostics") {
+    return <ClientDiagnostics requestedClientId={filters.clientId} searchParams={filters} />;
   }
   if (section === "attribution") {
     const [title, description] = clientTitles[section];
