@@ -207,6 +207,7 @@ model ClientDailyMetaMetric {
   impressions   Int                 @default(0)
   reach         Int                 @default(0)
   clicks        Int                 @default(0)
+  linkClicks    Int?
   leads         Int                 @default(0)
   createdAt     DateTime            @default(now())
   updatedAt     DateTime            @updatedAt

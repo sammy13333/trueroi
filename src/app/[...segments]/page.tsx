@@ -23,13 +23,20 @@ export default async function ClientRoutePage({
   searchParams,
 }: {
   params: Promise<{ segments: string[] }>;
-  searchParams: Promise<{ clientId?: string | string[] }>;
+  searchParams: Promise<{
+    clientId?: string | string[];
+    campaignId?: string | string[];
+    adsetId?: string | string[];
+    preset?: string | string[];
+    startDate?: string | string[];
+    endDate?: string | string[];
+  }>;
 }) {
   const { segments } = await params;
   const [section, detail] = segments;
-  const { clientId } = await searchParams;
+  const filters = await searchParams;
   if (section === "campaigns" || section === "adsets" || section === "ads") {
-    return <ClientMetaReport level={section === "campaigns" ? "CAMPAIGN" : section === "adsets" ? "ADSET" : "AD"} requestedClientId={clientId} />;
+    return <ClientMetaReport level={section === "campaigns" ? "CAMPAIGN" : section === "adsets" ? "ADSET" : "AD"} requestedClientId={filters.clientId} searchParams={filters} />;
   }
   const [title, description] = clientTitles[section] ?? [
     "Client ROI",

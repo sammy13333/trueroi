@@ -102,6 +102,13 @@ function leadCount(actions: MetaInsight["actions"]): number {
   }, 0);
 }
 
+function linkClickCount(actions: MetaInsight["actions"]): number {
+  return (actions ?? []).reduce(
+    (total, action) => total + (action.action_type === "link_click" ? toInt(action.value) : 0),
+    0,
+  );
+}
+
 function metaError(payload: MetaErrorPayload, status: number): ProviderFailure {
   const detail = payload.error;
   const suffix = [detail?.type, detail?.code ? `code ${detail.code}` : undefined].filter(Boolean).join(", ");
@@ -248,7 +255,7 @@ export async function syncClientMeta(clientId: string): Promise<ClientMetaSyncRe
         const adsetId = insight.adset_id ? adsetIds.get(insight.adset_id) ?? null : null;
         const adId = insight.ad_id ? adIds.get(insight.ad_id) ?? null : null;
         const subjectMetaId = level === "CAMPAIGN" ? insight.campaign_id! : level === "ADSET" ? insight.adset_id! : insight.ad_id!;
-        const data = { clientId, date, level, subjectMetaId, campaignId, adsetId, adId, spendCents: dollarsToCents(insight.spend), impressions: toInt(insight.impressions), reach: toInt(insight.reach), clicks: toInt(insight.clicks), leads: leadCount(insight.actions) };
+        const data = { clientId, date, level, subjectMetaId, campaignId, adsetId, adId, spendCents: dollarsToCents(insight.spend), impressions: toInt(insight.impressions), reach: toInt(insight.reach), clicks: toInt(insight.clicks), linkClicks: linkClickCount(insight.actions), leads: leadCount(insight.actions) };
         await prisma.clientDailyMetaMetric.upsert({
           where: { clientId_date_level_subjectMetaId: { clientId, date, level, subjectMetaId } },
           create: data,

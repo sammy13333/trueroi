@@ -267,25 +267,64 @@ function EmptyState({ title, copy, compact = false }: { title: string; copy: str
   return <div className={`grid place-items-center px-6 text-center ${compact ? "min-h-56 py-10" : "m-5 min-h-80 rounded-lg border border-[#1d2c37] bg-[#0d161e] py-16 sm:m-8"}`}><div className="max-w-md"><h2 className="text-base font-medium text-zinc-200">{title}</h2><p className="mt-2 text-sm leading-6 text-zinc-500">{copy}</p><Link href="/clients/new" className="mt-5 inline-block text-xs font-medium text-[#27b7df]">Add client →</Link></div></div>;
 }
 
-async function loadRows(clientId: string, level: ReportLevel): Promise<ReportRow[]> {
-  const metricSelect = { spendCents: true, impressions: true, reach: true, clicks: true, leads: true } as const;
+function reportHref(path: string, params: Record<string, string | undefined>) {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) if (value) query.set(key, value);
+  return `${path}?${query.toString()}`;
+}
+
+function DateFilters({ clientId, path, range, parentId, parentKey }: { clientId: string; path: string; range: DateRange; parentId?: string; parentKey?: "campaignId" | "adsetId" }) {
+  const preserved = { clientId, ...(parentId && parentKey ? { [parentKey]: parentId } : {}) };
+  const presets: Array<[DateRange["preset"], string]> = [["today", "Today"], ["last-7", "Last 7 days"], ["last-30", "Last 30 days"]];
+  return <section className="flex flex-wrap items-end gap-2 border-b border-[#272722] bg-[#080808] px-5 py-3 sm:px-8">
+    <span className="mr-1 text-xs text-zinc-600">Delivery date:</span>
+    {presets.map(([preset, label]) => <Link key={preset} href={reportHref(path, { ...preserved, preset })} className={`rounded-md border px-3 py-1.5 text-xs ${range.preset === preset ? "border-[#27b7df]/50 bg-[#27b7df]/10 text-[#71d8ef]" : "bg-[#0d161e] text-zinc-400"}`}>{label}</Link>)}
+    <form action={path} className="flex flex-wrap items-end gap-2">
+      <input type="hidden" name="clientId" value={clientId} />
+      {parentId && parentKey && <input type="hidden" name={parentKey} value={parentId} />}
+      <input type="hidden" name="preset" value="custom" />
+      <label className="text-[11px] text-zinc-600">From<input aria-label="Start date" type="date" name="startDate" defaultValue={range.start} className="ml-1 rounded-md border border-[#272722] bg-[#0d161e] px-2 py-1 text-xs text-zinc-300" /></label>
+      <label className="text-[11px] text-zinc-600">To<input aria-label="End date" type="date" name="endDate" defaultValue={range.end} className="ml-1 rounded-md border border-[#272722] bg-[#0d161e] px-2 py-1 text-xs text-zinc-300" /></label>
+      <button type="submit" className="rounded-md border border-[#272722] bg-[#0d161e] px-3 py-1.5 text-xs text-zinc-300">Apply custom</button>
+    </form>
+  </section>;
+}
+
+function Status({ status }: { status: string | null }) {
+  const normalized = status?.toUpperCase();
+  const color = normalized === "ACTIVE" ? "bg-emerald-400" : normalized === "PAUSED" ? "bg-cyan-400" : normalized === "DRAFT" ? "bg-zinc-500" : "bg-zinc-600";
+  return <span className="inline-flex items-center gap-1.5"><span aria-hidden className={`h-2 w-2 rounded-full ${color}`} /><span>{status ?? "Unknown"}</span></span>;
+}
+
+function RowName({ row, level, clientId, range }: { row: ReportRow; level: ReportLevel; clientId: string; range: DateRange }) {
+  const href = level === "CAMPAIGN"
+    ? reportHref("/adsets", { clientId, campaignId: row.id, preset: range.preset, startDate: range.preset === "custom" ? range.start : undefined, endDate: range.preset === "custom" ? range.end : undefined })
+    : level === "ADSET"
+      ? reportHref("/ads", { clientId, adsetId: row.id, preset: range.preset, startDate: range.preset === "custom" ? range.start : undefined, endDate: range.preset === "custom" ? range.end : undefined })
+      : undefined;
+  return href ? <Link href={href} className="font-medium text-zinc-200 hover:text-[#71d8ef]">{row.name}</Link> : <p className="font-medium text-zinc-200">{row.name}</p>;
+}
+
+async function loadRows(clientId: string, level: ReportLevel, range: DateRange, parent: { campaignId?: string; adsetId?: string }): Promise<ReportRow[]> {
+  const metricSelect = { spendCents: true, impressions: true, reach: true, clicks: true, linkClicks: true, leads: true } as const;
+  const metricWhere = { level, date: { gte: range.gte, lt: range.lt } };
   if (level === "CAMPAIGN") {
     const campaigns = await prisma.clientMetaCampaign.findMany({
-      where: { clientId }, orderBy: { name: "asc" },
-      select: { id: true, name: true, status: true, objective: true, metrics: { where: { level }, select: metricSelect } },
+      where: { clientId }, orderBy: { createdAt: "desc" },
+      select: { id: true, name: true, status: true, effectiveStatus: true, objective: true, metrics: { where: metricWhere, select: metricSelect } },
     });
-    return campaigns.map((campaign) => ({ id: campaign.id, name: campaign.name, status: campaign.status, parent: null, detail: campaign.objective, metrics: campaign.metrics }));
+    return campaigns.map((campaign) => ({ id: campaign.id, name: campaign.name, status: campaign.effectiveStatus ?? campaign.status, parent: null, detail: campaign.objective, metrics: campaign.metrics }));
   }
   if (level === "ADSET") {
     const adsets = await prisma.clientMetaAdset.findMany({
-      where: { clientId }, orderBy: { name: "asc" },
-      select: { id: true, name: true, status: true, campaign: { select: { name: true } }, metrics: { where: { level }, select: metricSelect } },
+      where: { clientId, ...(parent.campaignId ? { campaignId: parent.campaignId } : {}) }, orderBy: { createdAt: "desc" },
+      select: { id: true, name: true, status: true, campaign: { select: { name: true } }, metrics: { where: metricWhere, select: metricSelect } },
     });
     return adsets.map((adset) => ({ id: adset.id, name: adset.name, status: adset.status, parent: adset.campaign.name, detail: null, metrics: adset.metrics }));
   }
   const ads = await prisma.clientMetaAd.findMany({
-    where: { clientId }, orderBy: { name: "asc" },
-    select: { id: true, name: true, status: true, adset: { select: { name: true, campaign: { select: { name: true } } } }, metrics: { where: { level }, select: metricSelect } },
+    where: { clientId, ...(parent.adsetId ? { adsetId: parent.adsetId } : {}) }, orderBy: { createdAt: "desc" },
+    select: { id: true, name: true, status: true, adset: { select: { name: true, campaign: { select: { name: true } } } }, metrics: { where: metricWhere, select: metricSelect } },
   });
   return ads.map((ad) => ({ id: ad.id, name: ad.name, status: ad.status, parent: `${ad.adset.campaign.name} / ${ad.adset.name}`, detail: null, metrics: ad.metrics }));
 }
