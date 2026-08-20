@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
-const inputClass = "mt-1.5 w-full rounded-md border border-[#302f2a] bg-[#090909] px-3 py-2.5 text-sm text-zinc-200 outline-none placeholder:text-zinc-700 focus:border-[#d4af37]/70";
+const inputClass = "mt-1.5 w-full rounded-md border border-[#263947] bg-[#080e14] px-3 py-2.5 text-sm text-zinc-200 outline-none placeholder:text-zinc-700 focus:border-[#27b7df]/70";
 
 export function ClientConnectionForm() {
   const router = useRouter();
@@ -80,7 +80,7 @@ export function ClientConnectionForm() {
         </div>
       </section>
       {error && <p className="text-xs text-red-400">{error}</p>}
-      <div className="flex justify-end"><button disabled={saving} className="rounded-md bg-[#d4af37] px-4 py-2.5 text-xs font-semibold text-black hover:bg-[#e2c457] disabled:opacity-60">{saving ? "Creating…" : "Create client workspace"}</button></div>
+      <div className="flex justify-end"><button disabled={saving} className="rounded-md bg-[#27b7df] px-4 py-2.5 text-xs font-semibold text-[#061116] hover:bg-[#55cae8] disabled:opacity-60">{saving ? "Creating…" : "Create client workspace"}</button></div>
     </form>
   );
 }

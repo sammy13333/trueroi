@@ -15,8 +15,8 @@ export default async function AgencySectionPage({
       <div className="m-5 grid min-h-80 place-items-center rounded-lg border border-[#272722] bg-[#0c0c0b] p-8 text-center sm:m-8">
         <div className="max-w-md">
           <h2 className="text-base font-medium text-zinc-200">No synced data to report</h2>
-          <p className="mt-2 text-sm leading-6 text-zinc-500">TrueROI keeps agency acquisition and client delivery records in separate data stores. Connect a source and run a manual sync to populate this report.</p>
-          <Link href="/agency/settings" className="mt-5 inline-block text-xs font-medium text-[#d4af37]">Open agency settings →</Link>
+          <p className="mt-2 text-sm leading-6 text-zinc-500">TrueROI by TundraWeb keeps agency acquisition and client delivery records in separate data stores. Connect a source and run a manual sync to populate this report.</p>
+          <Link href="/agency/settings" className="mt-5 inline-block text-xs font-medium text-[#27b7df] hover:text-[#71d8ef]">Open agency settings →</Link>
         </div>
       </div>
     </AppShell>

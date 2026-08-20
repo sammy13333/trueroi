@@ -22,7 +22,7 @@ export function ClientSyncAllButton({ clientCount }: { clientCount: number }) {
   return (
     <div className="flex flex-wrap items-center justify-end gap-2">
       {message && <span className="text-xs text-zinc-500">{message}</span>}
-      <button onClick={syncAll} disabled={!clientCount || running} className="rounded-md border border-[#3b3520] bg-[#16140d] px-3.5 py-2 text-xs font-medium text-[#e6c45a] disabled:cursor-not-allowed disabled:opacity-40">
+      <button onClick={syncAll} disabled={!clientCount || running} className="rounded-md border border-[#1d5870] bg-[#0a2430] px-3.5 py-2 text-xs font-medium text-[#71d8ef] disabled:cursor-not-allowed disabled:opacity-40">
         {running ? "Syncing clients…" : "Sync all clients"}
       </button>
     </div>

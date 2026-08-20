@@ -87,7 +87,7 @@ export default async function ClientRoutePage({
         </div>
       ) : section === "clients" ? (
         <div className="m-5 max-w-5xl sm:m-8">
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3"><p className="text-xs text-zinc-600">Sync all fetches and stores Meta data for each configured client; incomplete accounts are skipped.</p><div className="flex items-center gap-2"><ClientSyncAllButton clientCount={clients.length} /><Link href="/clients/new" className="rounded-md bg-[#d4af37] px-3.5 py-2 text-xs font-semibold text-black">Add client</Link></div></div>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3"><p className="text-xs text-zinc-600">Sync all fetches and stores Meta data for each configured client; incomplete accounts are skipped.</p><div className="flex items-center gap-2"><ClientSyncAllButton clientCount={clients.length} /><Link href="/clients/new" className="rounded-md bg-[#27b7df] px-3.5 py-2 text-xs font-semibold text-[#061116] hover:bg-[#55cae8]">Add client</Link></div></div>
           <div className="overflow-hidden rounded-lg border border-[#272722] bg-[#0c0c0b]">
             {clients.length === 0 ? <p className="p-8 text-center text-sm text-zinc-500">No clients yet. Add your first client connection.</p> : clients.map((item) => <Link key={item.id} href={`/clients/${item.id}`} className="flex items-center justify-between border-b border-[#272722] px-5 py-4 last:border-b-0 hover:bg-zinc-900/50"><div><p className="text-sm font-medium text-zinc-200">{item.name}</p><p className="mt-1 text-xs text-zinc-600">{item.industry || "Industry not set"} · {item.lifecycle}</p></div><div className="text-right text-xs"><p className={item.metaAccessTokenEnc && item.ghlPrivateTokenEnc ? "text-emerald-400" : "text-amber-300"}>{item.metaAccessTokenEnc && item.ghlPrivateTokenEnc ? "Connections configured" : "Setup incomplete"}</p><p className="mt-1 text-zinc-600">{item.metaAdAccountId || "No Meta account"}</p></div></Link>)}
           </div>
@@ -97,7 +97,7 @@ export default async function ClientRoutePage({
           <div className="max-w-md">
             <h2 className="text-base font-medium text-zinc-200">No client data is synced yet</h2>
             <p className="mt-2 text-sm leading-6 text-zinc-500">Once a client source is connected and synced, this surface will report only that client’s delivery and CRM outcomes.</p>
-            <Link href="/clients/new" className="mt-5 inline-block text-xs font-medium text-[#d4af37]">Add a client →</Link>
+            <Link href="/clients/new" className="mt-5 inline-block text-xs font-medium text-[#27b7df] hover:text-[#71d8ef]">Add a client →</Link>
           </div>
         </div>
       )}

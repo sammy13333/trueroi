@@ -18,5 +18,5 @@ export function ClientMetaSyncButton({ clientId }: { clientId: string }) {
     router.refresh();
   }
 
-  return <div className="flex flex-wrap items-center gap-3"><button onClick={sync} disabled={busy} className="rounded-md border px-3 py-2 text-xs text-[#e6c45a] disabled:opacity-50">{busy ? "Syncing Meta…" : "Sync Meta data"}</button>{message && <p className="text-xs text-zinc-500">{message}</p>}</div>;
+  return <div className="flex flex-wrap items-center gap-3"><button onClick={sync} disabled={busy} className="rounded-md border border-[#1d5870] bg-[#0a2430] px-3 py-2 text-xs text-[#71d8ef] disabled:opacity-50">{busy ? "Syncing Meta…" : "Sync Meta data"}</button>{message && <p className="text-xs text-zinc-500">{message}</p>}</div>;
 }

@@ -15,12 +15,12 @@ function EmptyCampaignState() {
   return (
     <div className="grid min-h-80 place-items-center px-6 py-16">
       <div className="max-w-md text-center">
-        <div className="mx-auto mb-4 grid h-11 w-11 place-items-center rounded-full border border-[#d4af37]/30 bg-[#d4af37]/10 text-[#d4af37]">+</div>
+        <div className="mx-auto mb-4 grid h-11 w-11 place-items-center rounded-full border border-[#27b7df]/30 bg-[#27b7df]/10 text-[#27b7df]">+</div>
         <h2 className="text-base font-medium text-zinc-200">No synced campaign delivery data</h2>
         <p className="mt-2 text-sm leading-6 text-zinc-500">
           Add your Meta ad account in Agency Settings, then run a Meta sync. Campaign leads are always sourced from attributed GHL records—not Meta form counts.
         </p>
-        <Link href="/agency/settings" className="mt-5 inline-flex rounded-md bg-[#d4af37] px-3.5 py-2 text-xs font-semibold text-black hover:bg-[#e2c457]">
+        <Link href="/agency/settings" className="mt-5 inline-flex rounded-md bg-[#27b7df] px-3.5 py-2 text-xs font-semibold text-[#061116] hover:bg-[#55cae8]">
           Connect Meta & GHL
         </Link>
       </div>
@@ -37,7 +37,7 @@ export function AgencyCampaigns() {
         actions={
           <div className="flex items-center gap-2">
             <span className="hidden text-xs text-zinc-600 sm:inline">No Meta metrics synced</span>
-            <Link href="/agency/settings" className="rounded-md border border-[#3b3520] bg-[#16140d] px-3 py-2 text-xs font-medium text-[#e6c45a]">Sync Meta</Link>
+            <Link href="/agency/settings" className="rounded-md border border-[#1d5870] bg-[#0a2430] px-3 py-2 text-xs font-medium text-[#71d8ef]">Sync Meta</Link>
           </div>
         }
       />

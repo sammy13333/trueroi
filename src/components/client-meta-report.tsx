@@ -28,6 +28,7 @@ type Metric = {
   impressions: number;
   reach: number;
   clicks: number;
+  linkClicks: number | null;
   leads: number;
 };
 
@@ -40,6 +41,59 @@ type ReportRow = {
   metrics: Metric[];
 };
 
+type DateRange = {
+  preset: "today" | "last-7" | "last-30" | "custom";
+  start: string;
+  end: string;
+  gte: Date;
+  lt: Date;
+};
+
+type ReportSearchParams = {
+  clientId?: string | string[];
+  campaignId?: string | string[];
+  adsetId?: string | string[];
+  preset?: string | string[];
+  startDate?: string | string[];
+  endDate?: string | string[];
+};
+
+function first(value: string | string[] | undefined) {
+  return typeof value === "string" ? value : undefined;
+}
+
+function dateString(value: Date) {
+  return value.toISOString().slice(0, 10);
+}
+
+function utcDate(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const date = new Date(`${value}T00:00:00.000Z`);
+  return Number.isNaN(date.getTime()) || dateString(date) !== value ? null : date;
+}
+
+function resolveDateRange(searchParams: ReportSearchParams): DateRange {
+  const now = new Date();
+  const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const requested = first(searchParams.preset);
+  const preset = requested === "today" || requested === "last-7" || requested === "custom" ? requested : "last-30";
+  const customStart = first(searchParams.startDate);
+  const customEnd = first(searchParams.endDate);
+  const start = customStart ? utcDate(customStart) : null;
+  const end = customEnd ? utcDate(customEnd) : null;
+  if (preset === "custom" && start && end && start <= end) {
+    const lt = new Date(end);
+    lt.setUTCDate(lt.getUTCDate() + 1);
+    return { preset, start: customStart!, end: customEnd!, gte: start, lt };
+  }
+  const days = preset === "today" ? 1 : preset === "last-7" ? 7 : 30;
+  const gte = new Date(today);
+  gte.setUTCDate(gte.getUTCDate() - (days - 1));
+  const lt = new Date(today);
+  lt.setUTCDate(lt.getUTCDate() + 1);
+  return { preset: preset === "custom" ? "last-30" : preset, start: dateString(gte), end: dateString(today), gte, lt };
+}
+
 function sumMetrics(metrics: Metric[]) {
   return metrics.reduce(
     (total, metric) => ({
@@ -47,9 +101,10 @@ function sumMetrics(metrics: Metric[]) {
       impressions: total.impressions + metric.impressions,
       reach: total.reach + metric.reach,
       clicks: total.clicks + metric.clicks,
+      linkClicks: total.linkClicks === null || metric.linkClicks === null ? null : total.linkClicks + metric.linkClicks,
       leads: total.leads + metric.leads,
     }),
-    { spendCents: 0, impressions: 0, reach: 0, clicks: 0, leads: 0 },
+    { spendCents: 0, impressions: 0, reach: 0, clicks: 0, linkClicks: 0 as number | null, leads: 0 },
   );
 }
 
@@ -61,6 +116,14 @@ function number(value: number) {
   return new Intl.NumberFormat("en-US").format(value);
 }
 
+function optionalNumber(value: number | null) {
+  return value === null ? "—" : number(value);
+}
+
+function ctr(metrics: Metric) {
+  return metrics.impressions > 0 ? `${((metrics.clicks / metrics.impressions) * 100).toFixed(2)}%` : "—";
+}
+
 function date(value: Date | null) {
   return value ? value.toISOString().slice(0, 10) : "No dated metrics";
 }
@@ -68,11 +131,14 @@ function date(value: Date | null) {
 export async function ClientMetaReport({
   level,
   requestedClientId,
+  searchParams,
 }: {
   level: ReportLevel;
   requestedClientId?: string | string[];
+  searchParams: ReportSearchParams;
 }) {
   const config = reportConfig[level];
+  const range = resolveDateRange(searchParams);
   const clients = await prisma.client.findMany({
     orderBy: { updatedAt: "desc" },
     select: { id: true, name: true },
@@ -92,13 +158,13 @@ export async function ClientMetaReport({
   const [client, coverage, rows] = await Promise.all([
     prisma.client.findUniqueOrThrow({ where: { id: clientId }, select: { id: true, name: true } }),
     prisma.clientDailyMetaMetric.aggregate({
-      where: { clientId, level },
+      where: { clientId, level, date: { gte: range.gte, lt: range.lt } },
       _count: { _all: true },
       _min: { date: true },
       _max: { date: true },
       _sum: { spendCents: true },
     }),
-    loadRows(clientId, level),
+    loadRows(clientId, level, range, { campaignId: first(searchParams.campaignId), adsetId: first(searchParams.adsetId) }),
   ]);
   const rowTotals = rows.map((row) => sumMetrics(row.metrics));
   const totals = rowTotals.reduce(
@@ -107,10 +173,12 @@ export async function ClientMetaReport({
       impressions: total.impressions + row.impressions,
       reach: total.reach + row.reach,
       clicks: total.clicks + row.clicks,
+      linkClicks: total.linkClicks === null || row.linkClicks === null ? null : total.linkClicks + row.linkClicks,
       leads: total.leads + row.leads,
     }),
-    { spendCents: 0, impressions: 0, reach: 0, clicks: 0, leads: 0 },
+    { spendCents: 0, impressions: 0, reach: 0, clicks: 0, linkClicks: 0 as number | null, leads: 0 },
   );
+  const path = level === "CAMPAIGN" ? "/campaigns" : level === "ADSET" ? "/adsets" : "/ads";
 
   return (
     <AppShell>
@@ -125,24 +193,25 @@ export async function ClientMetaReport({
         {clients.map((item) => (
           <Link
             key={item.id}
-            href={`/${level === "CAMPAIGN" ? "campaigns" : level === "ADSET" ? "adsets" : "ads"}?clientId=${item.id}`}
-            className={`rounded-md border px-3 py-1.5 text-xs ${item.id === client.id ? "border-[#d4af37]/50 bg-[#d4af37]/10 text-[#e6c45a]" : "bg-[#11110f] text-zinc-400"}`}
+            href={reportHref(path, { clientId: item.id, campaignId: level === "ADSET" ? first(searchParams.campaignId) : undefined, adsetId: level === "AD" ? first(searchParams.adsetId) : undefined, preset: range.preset, startDate: range.preset === "custom" ? range.start : undefined, endDate: range.preset === "custom" ? range.end : undefined })}
+            className={`rounded-md border px-3 py-1.5 text-xs ${item.id === client.id ? "border-[#27b7df]/50 bg-[#27b7df]/10 text-[#71d8ef]" : "bg-[#0d161e] text-zinc-400"}`}
           >
             {item.name}
           </Link>
         ))}
         <Link href={`/clients/${client.id}`} className="ml-auto text-xs text-zinc-500 hover:text-zinc-200">Client workspace</Link>
       </section>
+      <DateFilters clientId={client.id} path={path} range={range} parentId={level === "ADSET" ? first(searchParams.campaignId) : level === "AD" ? first(searchParams.adsetId) : undefined} parentKey={level === "ADSET" ? "campaignId" : level === "AD" ? "adsetId" : undefined} />
       <div className="m-5 space-y-5 sm:m-8">
         <section className="grid gap-3 md:grid-cols-3">
-          <CoverageCard label="Stored daily rows" value={number(coverage._count._all)} detail={`${config.singular}-level metrics only`} />
+          <CoverageCard label="Stored daily rows" value={number(coverage._count._all)} detail={`${config.singular}-level rows in selected dates`} />
           <CoverageCard label="Metric coverage" value={date(coverage._min.date)} detail={coverage._max.date ? `through ${date(coverage._max.date)}` : "No synced insight dates"} />
-          <CoverageCard label="Level spend" value={currency(coverage._sum.spendCents ?? 0)} detail="Summed from stored daily metrics" />
+          <CoverageCard label="Level spend" value={currency(coverage._sum.spendCents ?? 0)} detail="Summed from selected delivery dates" />
         </section>
         <section className="overflow-hidden rounded-lg border border-[#272722] bg-[#0c0c0b]">
           <div className="border-b border-[#272722] px-4 py-3">
             <h2 className="text-sm font-medium text-zinc-200">{client.name} {config.singular.toLowerCase()} delivery</h2>
-            <p className="mt-0.5 text-xs text-zinc-600">All displayed totals are calculated from this client&apos;s synced {config.singular.toLowerCase()}-level rows.</p>
+            <p className="mt-0.5 text-xs text-zinc-600">{range.start} through {range.end} · Meta lead forms are delivery actions, never CRM leads.</p>
           </div>
           {rows.length === 0 ? (
             <EmptyState title={`No stored ${config.singular.toLowerCase()}s`} copy={`Run a Meta sync for ${client.name} to store ${config.singular.toLowerCase()} hierarchy and daily delivery metrics.`} compact />
@@ -158,7 +227,9 @@ export async function ClientMetaReport({
                     <th className="numeric px-3 py-3 font-medium">Impressions</th>
                     <th className="numeric px-3 py-3 font-medium">Reach</th>
                     <th className="numeric px-3 py-3 font-medium">Clicks</th>
-                    <th className="numeric px-4 py-3 font-medium">Leads</th>
+                    <th className="numeric px-3 py-3 font-medium">Link clicks</th>
+                    <th className="numeric px-3 py-3 font-medium">CTR</th>
+                    <th className="numeric px-4 py-3 font-medium">Meta lead forms (delivery)</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -168,9 +239,9 @@ export async function ClientMetaReport({
                   </tr>
                   {rows.map((row, index) => (
                     <tr key={row.id} className="border-b border-[#272722] text-zinc-400 last:border-b-0">
-                      <td className="px-4 py-3"><p className="font-medium text-zinc-200">{row.name}</p>{row.detail && <p className="mt-1 text-[11px] text-zinc-600">{row.detail}</p>}</td>
+                      <td className="px-4 py-3"><RowName row={row} level={level} clientId={client.id} range={range} />{row.detail && <p className="mt-1 text-[11px] text-zinc-600">{row.detail}</p>}</td>
                       <td className="px-3 py-3 text-zinc-500">{row.parent ?? "—"}</td>
-                      <td className="px-3 py-3">{row.status ?? "—"}</td>
+                      <td className="px-3 py-3"><Status status={row.status} /></td>
                       <MetricCells metrics={rowTotals[index]} />
                     </tr>
                   ))}
@@ -185,7 +256,7 @@ export async function ClientMetaReport({
 }
 
 function MetricCells({ metrics }: { metrics: Metric }) {
-  return <><td className="numeric px-3 py-3">{currency(metrics.spendCents)}</td><td className="numeric px-3 py-3">{number(metrics.impressions)}</td><td className="numeric px-3 py-3">{number(metrics.reach)}</td><td className="numeric px-3 py-3">{number(metrics.clicks)}</td><td className="numeric px-4 py-3">{number(metrics.leads)}</td></>;
+  return <><td className="numeric px-3 py-3">{currency(metrics.spendCents)}</td><td className="numeric px-3 py-3">{number(metrics.impressions)}</td><td className="numeric px-3 py-3">{number(metrics.reach)}</td><td className="numeric px-3 py-3">{number(metrics.clicks)}</td><td className="numeric px-3 py-3">{optionalNumber(metrics.linkClicks)}</td><td className="numeric px-3 py-3">{ctr(metrics)}</td><td className="numeric px-4 py-3">{number(metrics.leads)}</td></>;
 }
 
 function CoverageCard({ label, value, detail }: { label: string; value: string; detail: string }) {
@@ -193,7 +264,7 @@ function CoverageCard({ label, value, detail }: { label: string; value: string; 
 }
 
 function EmptyState({ title, copy, compact = false }: { title: string; copy: string; compact?: boolean }) {
-  return <div className={`grid place-items-center px-6 text-center ${compact ? "min-h-56 py-10" : "m-5 min-h-80 rounded-lg border border-[#272722] bg-[#0c0c0b] py-16 sm:m-8"}`}><div className="max-w-md"><h2 className="text-base font-medium text-zinc-200">{title}</h2><p className="mt-2 text-sm leading-6 text-zinc-500">{copy}</p><Link href="/clients/new" className="mt-5 inline-block text-xs font-medium text-[#d4af37]">Add client →</Link></div></div>;
+  return <div className={`grid place-items-center px-6 text-center ${compact ? "min-h-56 py-10" : "m-5 min-h-80 rounded-lg border border-[#1d2c37] bg-[#0d161e] py-16 sm:m-8"}`}><div className="max-w-md"><h2 className="text-base font-medium text-zinc-200">{title}</h2><p className="mt-2 text-sm leading-6 text-zinc-500">{copy}</p><Link href="/clients/new" className="mt-5 inline-block text-xs font-medium text-[#27b7df]">Add client →</Link></div></div>;
 }
 
 async function loadRows(clientId: string, level: ReportLevel): Promise<ReportRow[]> {

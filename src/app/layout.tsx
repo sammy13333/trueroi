@@ -8,7 +8,7 @@ const geistSans = Geist({
 });
 
 export const metadata: Metadata = {
-  title: "TrueROI — Agency Attribution",
+  title: "TrueROI by TundraWeb — Agency Attribution",
   description: "Agency attribution, advertising ROI, and financial health.",
 };
 

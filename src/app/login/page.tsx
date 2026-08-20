@@ -6,5 +6,5 @@ export const dynamic = "force-dynamic";
 
 export default async function LoginPage() {
   if ((await prisma.user.count()) === 0) redirect("/setup");
-  return <main className="min-h-screen bg-[#050505] px-5"><AuthForm /></main>;
+  return <main className="min-h-screen bg-[#060a0f] px-5"><AuthForm /></main>;
 }
