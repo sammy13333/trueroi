@@ -248,7 +248,7 @@ export async function ClientMetaReport({
         <section className="overflow-hidden rounded-lg border border-[#272722] bg-[#0c0c0b]">
           <div className="border-b border-[#272722] px-4 py-3">
             <h2 className="text-sm font-medium text-zinc-200">{client.name} {config.singular.toLowerCase()} delivery</h2>
-            <p className="mt-0.5 text-xs text-zinc-600">{range.start} through {range.end} · CRM outcomes use only matched GHL opportunities; Meta lead forms are never CRM leads.</p>
+            <p className="mt-0.5 text-xs text-zinc-600">{range.start} through {range.end} · CRM outcomes use only matched GHL opportunities; Meta lead forms are never CRM leads. Booked matches stages “Booked”, “Appointment Booked”, or “Scheduled”, or tags “booked” / “appointment booked”.</p>
           </div>
           {rows.length === 0 ? (
             <EmptyState title={`No stored ${config.singular.toLowerCase()}s`} copy={`Run a Meta sync for ${client.name} to store ${config.singular.toLowerCase()} hierarchy and daily delivery metrics.`} compact />
