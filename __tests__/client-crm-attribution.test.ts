@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { aggregateCanonicalCrmMetrics, isBookedAppointment, resolveCrmAttribution } from "@/lib/client-crm-attribution";
+import { aggregateCanonicalCrmMetrics, isBookedAppointment, resolveCrmAttribution } from "../src/lib/client-crm-attribution";
 
 const hierarchy = {
   campaigns: [{ id: "campaign-local", metaId: "campaign-1", name: "Spring Sale" }],
