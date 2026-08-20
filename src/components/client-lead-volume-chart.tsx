@@ -21,10 +21,22 @@ function currency(cents: number) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(cents / 100);
 }
 
+function leadLabel(leads: number) {
+  return `${leads} CRM lead${leads === 1 ? "" : "s"}`;
+}
+
+function spendLabel(point: LeadVolumePoint) {
+  return point.spendCents === null ? "Not synced" : currency(point.spendCents);
+}
+
+function cplLabel(point: LeadVolumePoint) {
+  return point.cplCents === null ? "Unavailable" : currency(point.cplCents);
+}
+
 function pointDetail(point: LeadVolumePoint) {
-  const spend = point.spendCents === null ? "Meta spend not synced for this period" : `Meta spend ${currency(point.spendCents)}`;
-  const cpl = point.cplCents === null ? "CRM CPL unavailable" : `CRM CPL ${currency(point.cplCents)}`;
-  return `${point.label}: ${point.leads} CRM lead${point.leads === 1 ? "" : "s"} · ${spend} · ${cpl}`;
+  const spend = point.spendCents === null ? "Meta spend not synced for this period" : `Meta spend ${spendLabel(point)}`;
+  const cpl = point.cplCents === null ? "CRM CPL unavailable" : `CRM CPL ${cplLabel(point)}`;
+  return `${point.label}: ${leadLabel(point.leads)} · ${spend} · ${cpl}`;
 }
 
 export function ClientLeadVolumeChart({ series }: { series: Record<Period, LeadVolumePoint[]> }) {
@@ -37,7 +49,7 @@ export function ClientLeadVolumeChart({ series }: { series: Record<Period, LeadV
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-sm font-medium text-zinc-200">CRM leads over time</h2>
-          <p className="mt-1 text-xs text-zinc-600">Hover a bar for exact CRM leads, matching stored Meta spend, and blended CRM CPL.</p>
+          <p className="mt-1 text-xs text-zinc-600">Every bucket shows its CRM leads, stored Meta spend, and blended CRM CPL. Hover a bar for the full detail.</p>
         </div>
         <div className="flex rounded-md border border-[#272722] bg-[#090909] p-0.5">
           {(Object.keys(labels) as Period[]).map((item) => (
@@ -57,12 +69,21 @@ export function ClientLeadVolumeChart({ series }: { series: Record<Period, LeadV
         ))}
       </div>
       <div className="mt-2 flex justify-between text-[10px] text-zinc-600"><span>{points[0]?.label}</span><span>{points.at(-1)?.label}</span></div>
-      <details className="mt-4 rounded-md border border-[#272722] bg-[#090909] px-3 py-2">
-        <summary className="cursor-pointer text-xs text-zinc-400">Show {labels[period].toLowerCase()} details</summary>
-        <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-          {points.map((point) => <p key={point.label} className="text-[11px] leading-5 text-zinc-500">{pointDetail(point)}</p>)}
+      <div className="mt-4">
+        <h3 className="text-xs font-medium text-zinc-300">{labels[period]} bucket metrics</h3>
+        <div className="mt-2 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+          {points.map((point) => (
+            <dl key={point.label} className="rounded-md border border-[#272722] bg-[#090909] px-3 py-2 text-[11px]">
+              <dt className="font-medium text-zinc-300">{point.label}</dt>
+              <dd className="mt-1 grid grid-cols-3 gap-2 text-zinc-500">
+                <span><span className="block text-[10px] uppercase tracking-wide text-zinc-600">Leads</span>{leadLabel(point.leads)}</span>
+                <span><span className="block text-[10px] uppercase tracking-wide text-zinc-600">Spend</span>{spendLabel(point)}</span>
+                <span><span className="block text-[10px] uppercase tracking-wide text-zinc-600">CRM CPL</span>{cplLabel(point)}</span>
+              </dd>
+            </dl>
+          ))}
         </div>
-      </details>
+      </div>
     </section>
   );
 }
