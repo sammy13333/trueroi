@@ -120,7 +120,7 @@ export async function ClientDiagnostics({
           <CoverageCard label="Daily Meta metrics" value={count(client._count.dailyMetaMetrics)} detail={metricRange} />
           <CoverageCard label="GHL pipelines" value={count(client._count.pipelines)} detail="Stored pipeline records" />
           <CoverageCard label="GHL opportunities" value={count(client._count.ghlOpportunities)} detail="Stored CRM opportunity records" />
-          <CoverageCard label="Canonical CRM leads" value={count(client._count.crmLeads)} detail={`${count(bookedLeads)} booked · deduped by GHL contact`} />
+          <CoverageCard label="Canonical CRM leads" value={count(client._count.crmLeads)} detail={`${count(bookedLeads)} booked by contact tag · deduped by GHL contact`} />
           <CoverageCard label="Unmatched CRM leads" value={count(unmatchedLeads)} detail="Exact ID/name matching failures are retained for review" />
         </section>
 
@@ -132,7 +132,7 @@ export async function ClientDiagnostics({
           <div className="divide-y divide-[#272722] text-sm">
             <SourceCheck label="Meta hierarchy" value={`${count(client._count.metaCampaigns)} campaigns · ${count(client._count.metaAdsets)} ad sets · ${count(client._count.metaAds)} ads`} detail={syncDetail(latestMetaSync)} />
             <SourceCheck label="Daily Meta delivery" value={`${count(client._count.dailyMetaMetrics)} metric rows`} detail={metricRange} />
-            <SourceCheck label="GoHighLevel CRM" value={`${count(client._count.pipelines)} pipelines · ${count(client._count.ghlContacts)} contacts · ${count(client._count.ghlOpportunities)} opportunities`} detail={`${syncDetail(latestGhlSync)} · ${count(client._count.crmLeads)} canonical contacts, ${count(unmatchedLeads)} unmatched`} />
+            <SourceCheck label="GoHighLevel CRM" value={`${count(client._count.pipelines)} pipelines · ${count(client._count.ghlContacts)} contacts · ${count(client._count.ghlOpportunities)} opportunities`} detail={`${syncDetail(latestGhlSync)} · ${count(client._count.crmLeads)} contacts tagged new lead, ${count(unmatchedLeads)} unmatched`} />
           </div>
         </section>
         {isOwner && <ClientAttributionTrace clientId={client.id} />}

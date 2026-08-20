@@ -43,6 +43,11 @@ function selectedRaw(value: unknown, path = "contact"): Array<{ path: string; va
   });
 }
 
+function contactTags(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((tag) => typeof tag === "string" ? [tag] : tag && typeof tag === "object" && typeof (tag as { name?: unknown }).name === "string" ? [(tag as { name: string }).name] : []);
+}
+
 function customFieldItems(value: unknown) {
   if (!Array.isArray(value)) return [];
   return value.flatMap((item, index) => {
@@ -147,8 +152,8 @@ export async function buildClientAttributionTrace(clientId: string, ghlContactId
   }));
 
   const [storedContact, opportunities, canonicalLead, campaigns, adsets, ads] = await Promise.all([
-    prisma.clientGhlContact.findUnique({ where: { clientId_ghlId: { clientId, ghlId: ghlContactId } }, select: { id: true, ghlId: true, attributionSource: true, utmSource: true, utmMedium: true, utmCampaign: true, utmContent: true, utmTerm: true, campaignMetaId: true, adsetMetaId: true, adMetaId: true, attributionEvidenceJson: true } }),
-    prisma.clientGhlOpportunity.findMany({ where: { clientId, contact: { is: { ghlId: ghlContactId } } }, select: { ghlId: true, pipelineStageGhlId: true, pipelineStageName: true, attributionSource: true, utmSource: true, utmMedium: true, utmCampaign: true, utmContent: true, utmTerm: true, campaignMetaId: true, adsetMetaId: true, adMetaId: true, attributionEvidenceJson: true, pipeline: { select: { ghlId: true, name: true } } } }),
+    prisma.clientGhlContact.findUnique({ where: { clientId_ghlId: { clientId, ghlId: ghlContactId } }, select: { id: true, ghlId: true, tagsJson: true, attributionSource: true, utmSource: true, utmMedium: true, utmCampaign: true, utmContent: true, utmTerm: true, campaignMetaId: true, adsetMetaId: true, adMetaId: true, attributionEvidenceJson: true } }),
+    prisma.clientGhlOpportunity.findMany({ where: { clientId, contact: { is: { ghlId: ghlContactId } } }, select: { ghlId: true, tagsJson: true, attributionSource: true, utmSource: true, utmMedium: true, utmCampaign: true, utmContent: true, utmTerm: true, campaignMetaId: true, adsetMetaId: true, adMetaId: true, attributionEvidenceJson: true, pipeline: { select: { ghlId: true, name: true } } } }),
     prisma.clientCrmLead.findFirst({ where: { clientId, ghlContactId }, select: { id: true, ghlContactId: true, ghlOpportunityId: true, attributionSource: true, utmSource: true, utmMedium: true, utmCampaign: true, utmContent: true, utmTerm: true, campaignMetaId: true, adsetMetaId: true, adMetaId: true, matchedCampaignId: true, matchedAdsetId: true, matchedAdId: true, attributionMethod: true, unmatchedReason: true, pipelineGhlId: true, pipelineStageGhlId: true, pipelineStageName: true, booked: true, leadCreatedAt: true } }),
     prisma.clientMetaCampaign.findMany({ where: { clientId }, select: { id: true, metaId: true, name: true } }),
     prisma.clientMetaAdset.findMany({ where: { clientId }, select: { id: true, metaId: true, name: true, campaignId: true } }),
@@ -163,7 +168,7 @@ export async function buildClientAttributionTrace(clientId: string, ghlContactId
   const range = reportRange();
   const dateQualifies = Boolean(canonicalLead?.leadCreatedAt && canonicalLead.leadCreatedAt >= range.gte && canonicalLead.leadCreatedAt < range.lt);
   const counted = Boolean(dateQualifies && canonicalLead?.matchedCampaignId);
-  const rootCause = !canonicalLead ? { code: "NO_STORED_CANONICAL_LEAD", evidence: "No canonical ClientCrmLead exists for this GHL contact." }
+  const rootCause = !canonicalLead ? { code: "NO_STORED_CANONICAL_LEAD", evidence: "No canonical ClientCrmLead exists for this GHL contact; canonical leads require the live contact tag “new lead”." }
     : canonicalLead.unmatchedReason ? { code: "UNMATCHED_ATTRIBUTION", evidence: canonicalLead.unmatchedReason }
     : !dateQualifies ? { code: "OUTSIDE_REPORTING_DATE_RANGE", evidence: "The canonical lead-created date is outside the current rolling 30-day report cohort." }
     : !canonicalLead.matchedCampaignId ? { code: "NO_CAMPAIGN_ROLLUP", evidence: "The canonical lead has no matched campaign ID." }
@@ -174,6 +179,7 @@ export async function buildClientAttributionTrace(clientId: string, ghlContactId
     trace: {
       contactId: ghlContactId,
       liveAttributionRaw: selectedRaw(contact),
+      liveContactTags: contactTags(contact.tags),
       customFields: customItems.map((item) => ({ id: item.id, name: definitions.names.get(item.id) ?? null, value: item.value, resolved: definitions.names.has(item.id) })),
       customFieldDefinitionStatus: definitions.available ? "Resolved where GoHighLevel returned a definition; IDs without names are not exposed as inferred names." : "GoHighLevel custom-field definitions could not be read; IDs remain unresolved.",
       extraction: liveEvidence,

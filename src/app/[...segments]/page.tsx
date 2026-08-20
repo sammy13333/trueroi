@@ -10,7 +10,6 @@ import { ClientInsights } from "@/components/client-insights";
 import { ClientReportPlaceholder } from "@/components/client-report-placeholder";
 import { ClientGhlSyncButton } from "@/components/client-ghl-sync-button";
 import { ClientDiagnostics } from "@/components/client-diagnostics";
-import { ClientBookingMappings } from "@/components/client-booking-mappings";
 import { prisma } from "@/lib/prisma";
 
 const clientTitles: Record<string, [string, string]> = {
@@ -67,7 +66,7 @@ export default async function ClientRoutePage({
     where: { id: detail },
     select: {
       id: true, name: true, industry: true, metaAdAccountId: true, ghlLocationId: true, metaAccessTokenEnc: true, ghlPrivateTokenEnc: true, lifecycle: true,
-      pipelines: { select: { id: true, ghlId: true, name: true, stagesJson: true, selected: true, bookedStageIdsJson: true } },
+      pipelines: { select: { id: true, ghlId: true, name: true } },
       syncLogs: { orderBy: { createdAt: "desc" }, take: 1, select: { status: true, message: true, latestMetricDate: true, completedAt: true, createdAt: true } },
       dailyMetaMetrics: { orderBy: { date: "desc" }, take: 1, select: { date: true } },
       _count: { select: { dailyMetaMetrics: true } },
@@ -109,7 +108,7 @@ export default async function ClientRoutePage({
                 <p className="mt-3 text-xs text-zinc-500">Stored daily metric rows: {client._count.dailyMetaMetrics} · Latest coverage: {latestCoverage ? latestCoverage.toISOString().slice(0, 10) : "No daily insights stored"}</p>
               </section>;
             })()}
-            <div className="mt-5 border-t pt-5"><FetchPipelinesButton clientId={client.id} />{client.pipelines.length > 0 && <><p className="mt-3 text-xs text-emerald-400">Imported pipelines: {client.pipelines.map((pipeline) => pipeline.name).join(", ")}</p><ClientBookingMappings clientId={client.id} pipelines={client.pipelines.map((pipeline) => ({ ghlId: pipeline.ghlId, name: pipeline.name, selected: pipeline.selected, bookedStageIds: parseStringArray(pipeline.bookedStageIdsJson), stages: parseStages(pipeline.stagesJson) }))} /></>}</div>
+            <div className="mt-5 border-t pt-5"><FetchPipelinesButton clientId={client.id} />{client.pipelines.length > 0 && <p className="mt-3 text-xs text-emerald-400">Imported pipelines: {client.pipelines.map((pipeline) => pipeline.name).join(", ")}</p>}<p className="mt-3 text-xs text-zinc-500">CRM outcomes use live GHL contact tags: <span className="font-mono">new lead</span> for CRM leads and <span className="font-mono">booked appointment</span> or <span className="font-mono">appointment booked</span> for booked appointments.</p></div>
           </section>
         </div>
       ) : section === "clients" ? (
@@ -130,12 +129,4 @@ export default async function ClientRoutePage({
       )}
     </AppShell>
   );
-}
-
-function parseStringArray(value: string) {
-  try { const parsed: unknown = JSON.parse(value); return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : []; } catch { return []; }
-}
-
-function parseStages(value: string): Array<{ id?: string; name?: string }> {
-  try { const parsed: unknown = JSON.parse(value); return Array.isArray(parsed) ? parsed.filter((item): item is { id?: string; name?: string } => Boolean(item && typeof item === "object")) : []; } catch { return []; }
 }

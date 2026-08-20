@@ -255,7 +255,7 @@ export async function ClientMetaReport({
         <section className="overflow-hidden rounded-lg border border-[#272722] bg-[#0c0c0b]">
           <div className="border-b border-[#272722] px-4 py-3">
             <h2 className="text-sm font-medium text-zinc-200">{client.name} {config.singular.toLowerCase()} delivery</h2>
-            <p className="mt-0.5 text-xs text-zinc-600">{range.start} through {range.end} delivery spend · Meta Leads and Meta CPL come from Meta delivery actions and reported cost per action when available. CRM acquisition cohorts use each GHL contact’s lead-created date once. Later booking updates that same cohort. Booked uses selected pipeline stage mappings when configured, otherwise exact conventional booked stages/tags.</p>
+            <p className="mt-0.5 text-xs text-zinc-600">{range.start} through {range.end} delivery spend · Meta Leads and Meta CPL come from Meta delivery actions and reported cost per action when available. CRM acquisition cohorts include attributed GHL contacts tagged “new lead” once. Later contact-tag updates can mark that cohort booked when tagged “booked appointment” or “appointment booked”.</p>
           </div>
           {rows.length === 0 ? (
             <EmptyState title={`No stored ${config.singular.toLowerCase()}s`} copy={`Run a Meta sync for ${client.name} to store ${config.singular.toLowerCase()} hierarchy and daily delivery metrics.`} compact />

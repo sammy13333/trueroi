@@ -188,19 +188,25 @@ function parseTags(value: string) {
   try {
     const parsed: unknown = JSON.parse(value);
     return Array.isArray(parsed)
-      ? parsed.filter((tag): tag is string => typeof tag === "string").map((tag) => normalized(tag)).filter((tag): tag is string => Boolean(tag))
+      ? [...new Set(parsed.filter((tag): tag is string => typeof tag === "string").map((tag) => normalized(tag)).filter((tag): tag is string => Boolean(tag)))]
       : [];
   } catch {
     return [];
   }
 }
 
-/**
- * Default booking rule: a stage named "Booked", "Appointment Booked", or
- * "Scheduled" (case-insensitive), or a contact/opportunity tag containing
- * "booked" or "appointment booked". This is intentionally conservative.
- */
-export type BookingPipeline = { ghlId: string; selected: boolean; bookedStageIdsJson: string };
+export const GHL_NEW_LEAD_TAG = "new lead";
+const GHL_BOOKED_APPOINTMENT_TAGS = new Set(["booked appointment", "appointment booked"]);
+
+/** Tags are normalized with Unicode case folding and any separator collapsed to a space. */
+export function hasGhlContactTag(contact: { tagsJson: string }, tag: string) {
+  const expected = normalized(tag);
+  return Boolean(expected && parseTags(contact.tagsJson).includes(expected));
+}
+
+export function isCrmLeadContact(contact: { tagsJson: string }) {
+  return hasGhlContactTag(contact, GHL_NEW_LEAD_TAG);
+}
 
 export type CanonicalCrmLeadMetric = {
   contactId: string;
@@ -227,42 +233,7 @@ export function aggregateCanonicalCrmMetrics(leads: CanonicalCrmLeadMetric[], le
   return counts;
 }
 
-function bookedStageIds(value: string) {
-  try {
-    const parsed: unknown = JSON.parse(value);
-    return new Set(Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === "string" && id.trim().length > 0).map((id) => id.trim()) : []);
-  } catch {
-    return new Set<string>();
-  }
-}
-
-/**
- * A configured mapping is authoritative. The conservative conventional stage/tag
- * fallback is used only when the client has not selected any booked stages.
- */
-export function isBookedAppointment(
-  opportunity: {
-    pipelineStageGhlId?: string | null;
-    pipelineStageName: string | null;
-    pipeline?: { ghlId: string; selected: boolean; bookedStageIdsJson: string } | null;
-    tagsJson: string;
-    contact: { tagsJson: string } | null;
-  },
-  configuredPipelines: BookingPipeline[] = [],
-) {
-  const pipelines = configuredPipelines.length ? configuredPipelines : opportunity.pipeline ? [opportunity.pipeline] : [];
-  const configured = pipelines.filter((pipeline) => pipeline.selected && bookedStageIds(pipeline.bookedStageIdsJson).size > 0);
-  if (configured.length > 0) {
-    const pipeline = opportunity.pipeline ?? configured.find((item) => item.ghlId === opportunity.pipeline?.ghlId);
-    return Boolean(
-      pipeline?.selected
-      && opportunity.pipelineStageGhlId
-      && bookedStageIds(pipeline.bookedStageIdsJson).has(opportunity.pipelineStageGhlId),
-    );
-  }
-  const stage = normalized(opportunity.pipelineStageName);
-  const stageBooked = stage === "booked" || stage === "appointment booked" || stage === "scheduled";
-  const tags = [...parseTags(opportunity.tagsJson), ...parseTags(opportunity.contact?.tagsJson ?? "[]")];
-  const tagBooked = tags.some((tag) => tag === "booked" || tag === "appointment booked");
-  return stageBooked || tagBooked;
+/** Booking is determined only from the attributed GHL contact's live tags. */
+export function isBookedAppointment(contact: { tagsJson: string }) {
+  return parseTags(contact.tagsJson).some((tag) => GHL_BOOKED_APPOINTMENT_TAGS.has(tag));
 }

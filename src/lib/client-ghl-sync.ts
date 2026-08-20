@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { decryptSecret } from "@/lib/secrets";
-import { isBookedAppointment, resolveCrmAttribution, type AttributionOpportunity } from "@/lib/client-crm-attribution";
+import { isBookedAppointment, isCrmLeadContact, resolveCrmAttribution, type AttributionOpportunity } from "@/lib/client-crm-attribution";
 
 const GHL_API_BASE = "https://services.leadconnectorhq.com";
 const GHL_VERSION = "2021-07-28";
@@ -299,7 +299,7 @@ async function fetchOpportunityContacts(opportunities: GhlOpportunity[], token: 
 }
 
 export async function rebuildCanonicalCrmLeads(clientId: string) {
-  const [campaigns, adsets, ads, contacts, pipelines] = await Promise.all([
+  const [campaigns, adsets, ads, contacts] = await Promise.all([
     prisma.clientMetaCampaign.findMany({ where: { clientId }, select: { id: true, metaId: true, name: true } }),
     prisma.clientMetaAdset.findMany({ where: { clientId }, select: { id: true, metaId: true, name: true, campaignId: true } }),
     prisma.clientMetaAd.findMany({ where: { clientId }, select: { id: true, metaId: true, name: true, adsetId: true } }),
@@ -314,20 +314,26 @@ export async function rebuildCanonicalCrmLeads(clientId: string) {
             ghlId: true, sourceCreatedAt: true, sourceUpdatedAt: true, lastStatusChangeAt: true, pipelineStageGhlId: true, pipelineStageName: true,
             attributionSource: true, utmSource: true, utmMedium: true, utmCampaign: true, utmContent: true, utmTerm: true,
             campaignMetaId: true, adsetMetaId: true, adMetaId: true, attributionEvidenceJson: true, tagsJson: true,
-            pipeline: { select: { ghlId: true, selected: true, bookedStageIdsJson: true } },
+            pipeline: { select: { ghlId: true } },
           },
         },
         tagsJson: true,
       },
     }),
-    prisma.clientPipeline.findMany({ where: { clientId }, select: { ghlId: true, selected: true, bookedStageIdsJson: true } }),
   ]);
   const hierarchy = { campaigns, adsets, ads };
-  for (const contact of contacts) {
+  const leadContacts = contacts.filter(isCrmLeadContact);
+  if (leadContacts.length) {
+    await prisma.clientCrmLead.deleteMany({ where: { clientId, contactId: { notIn: leadContacts.map((contact) => contact.id) } } });
+  } else {
+    await prisma.clientCrmLead.deleteMany({ where: { clientId } });
+  }
+
+  for (const contact of leadContacts) {
     const candidates: Array<AttributionOpportunity & {
       ghlId?: string; pipelineStageGhlId?: string | null; pipelineStageName?: string | null; tagsJson?: string;
       attributionSource?: string | null; utmSource?: string | null;
-      pipeline?: { ghlId: string; selected: boolean; bookedStageIdsJson: string } | null;
+      pipeline?: { ghlId: string } | null;
     }> = [
       ...contact.opportunities,
       {
@@ -344,13 +350,8 @@ export async function rebuildCanonicalCrmLeads(clientId: string) {
     const resolution = selected?.resolution ?? {
       attribution: null, method: null, evidence: [], unmatchedReason: "Conflicting exact attribution evidence exists across this contact’s opportunities.",
     };
-    const bookedOpportunity = contact.opportunities.find((opportunity) => isBookedAppointment({
-      pipelineStageGhlId: opportunity.pipelineStageGhlId,
-      pipelineStageName: opportunity.pipelineStageName,
-      pipeline: opportunity.pipeline,
-      tagsJson: opportunity.tagsJson,
-      contact: { tagsJson: contact.tagsJson },
-    }, pipelines));
+    const booked = isBookedAppointment(contact);
+    const bookedAt = booked ? contact.sourceUpdatedAt : null;
     await prisma.clientCrmLead.upsert({
       where: { contactId: contact.id },
       create: {
@@ -362,7 +363,7 @@ export async function rebuildCanonicalCrmLeads(clientId: string) {
         campaignMetaId: raw.campaignMetaId, adsetMetaId: raw.adsetMetaId, adMetaId: raw.adMetaId,
         matchedCampaignId: resolution.attribution?.campaignId, matchedAdsetId: resolution.attribution?.adsetId, matchedAdId: resolution.attribution?.adId,
         attributionMethod: resolution.method, unmatchedReason: resolution.unmatchedReason,
-        booked: Boolean(bookedOpportunity), bookedAt: bookedOpportunity?.lastStatusChangeAt ?? bookedOpportunity?.sourceUpdatedAt ?? null,
+        booked, bookedAt,
         leadCreatedAt: contact.sourceCreatedAt ?? contact.opportunities[0]?.sourceCreatedAt ?? null,
         attributionEvidenceJson: JSON.stringify(resolution.evidence),
       },
@@ -374,7 +375,7 @@ export async function rebuildCanonicalCrmLeads(clientId: string) {
         campaignMetaId: raw.campaignMetaId, adsetMetaId: raw.adsetMetaId, adMetaId: raw.adMetaId,
         matchedCampaignId: resolution.attribution?.campaignId, matchedAdsetId: resolution.attribution?.adsetId, matchedAdId: resolution.attribution?.adId,
         attributionMethod: resolution.method, unmatchedReason: resolution.unmatchedReason,
-        booked: Boolean(bookedOpportunity), bookedAt: bookedOpportunity?.lastStatusChangeAt ?? bookedOpportunity?.sourceUpdatedAt ?? null,
+        booked, bookedAt,
         leadCreatedAt: contact.sourceCreatedAt ?? contact.opportunities[0]?.sourceCreatedAt ?? null,
         attributionEvidenceJson: JSON.stringify(resolution.evidence),
       },

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { aggregateCanonicalCrmMetrics, isBookedAppointment, resolveCrmAttribution } from "../src/lib/client-crm-attribution";
+import { aggregateCanonicalCrmMetrics, hasGhlContactTag, isBookedAppointment, isCrmLeadContact, resolveCrmAttribution } from "../src/lib/client-crm-attribution";
 
 const hierarchy = {
   campaigns: [{ id: "campaign-local", metaId: "campaign-1", name: "Spring Sale" }],
@@ -35,12 +35,16 @@ describe("CRM attribution", () => {
 });
 
 describe("booked and aggregation rules", () => {
-  it("honors selected booked stage IDs over fallback tags", () => {
-    const mapping = [{ ghlId: "p1", selected: true, bookedStageIdsJson: "[\"stage-booked\"]" }];
-    const base = { pipelineStageName: "Booked", pipeline: mapping[0], tagsJson: "[]", contact: { tagsJson: "[]" } };
-    expect(isBookedAppointment({ ...base, pipelineStageGhlId: "stage-booked" }, mapping)).toBe(true);
-    expect(isBookedAppointment({ ...base, pipelineStageGhlId: "stage-other" }, mapping)).toBe(false);
-    expect(isBookedAppointment({ pipelineStageName: "Appointment Booked", tagsJson: "[]", contact: { tagsJson: "[]" } })).toBe(true);
+  it("uses normalized GHL contact tags for canonical lead eligibility", () => {
+    expect(isCrmLeadContact({ tagsJson: "[\" NEW-LEAD \"]" })).toBe(true);
+    expect(hasGhlContactTag({ tagsJson: "[\"new_lead\"]" }, "new lead")).toBe(true);
+    expect(isCrmLeadContact({ tagsJson: "[\"appointment booked\"]" })).toBe(false);
+  });
+
+  it("uses only normalized GHL contact booked tags", () => {
+    expect(isBookedAppointment({ tagsJson: "[\"Booked_Appointment\"]" })).toBe(true);
+    expect(isBookedAppointment({ tagsJson: "[\"APPOINTMENT-booked\"]" })).toBe(true);
+    expect(isBookedAppointment({ tagsJson: "[\"booked\", \"new lead\"]" })).toBe(false);
   });
 
   it("dedupes a contact across opportunities and keeps zero-denominator rows at zero", () => {
