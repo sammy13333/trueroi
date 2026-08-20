@@ -193,7 +193,41 @@ function parseTags(value: string) {
  * "Scheduled" (case-insensitive), or a contact/opportunity tag containing
  * "booked" or "appointment booked". This is intentionally conservative.
  */
-export function isBookedAppointment(opportunity: { pipelineStageName: string | null; tagsJson: string; contact: { tagsJson: string } | null }) {
+export type BookingPipeline = { ghlId: string; selected: boolean; bookedStageIdsJson: string };
+
+function bookedStageIds(value: string) {
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return new Set(Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === "string" && id.trim()).map((id) => id.trim()) : []);
+  } catch {
+    return new Set<string>();
+  }
+}
+
+/**
+ * A configured mapping is authoritative. The conservative conventional stage/tag
+ * fallback is used only when the client has not selected any booked stages.
+ */
+export function isBookedAppointment(
+  opportunity: {
+    pipelineStageGhlId?: string | null;
+    pipelineStageName: string | null;
+    pipeline?: { ghlId: string; selected: boolean; bookedStageIdsJson: string } | null;
+    tagsJson: string;
+    contact: { tagsJson: string } | null;
+  },
+  configuredPipelines: BookingPipeline[] = [],
+) {
+  const pipelines = configuredPipelines.length ? configuredPipelines : opportunity.pipeline ? [opportunity.pipeline] : [];
+  const configured = pipelines.filter((pipeline) => pipeline.selected && bookedStageIds(pipeline.bookedStageIdsJson).size > 0);
+  if (configured.length > 0) {
+    const pipeline = opportunity.pipeline ?? configured.find((item) => item.ghlId === opportunity.pipeline?.ghlId);
+    return Boolean(
+      pipeline?.selected
+      && opportunity.pipelineStageGhlId
+      && bookedStageIds(pipeline.bookedStageIdsJson).has(opportunity.pipelineStageGhlId),
+    );
+  }
   const stage = normalized(opportunity.pipelineStageName);
   const stageBooked = stage === "booked" || stage === "appointment booked" || stage === "scheduled";
   const tags = [...parseTags(opportunity.tagsJson), ...parseTags(opportunity.contact?.tagsJson ?? "[]")];

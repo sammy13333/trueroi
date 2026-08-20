@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { decryptSecret } from "@/lib/secrets";
+import { rebuildCanonicalCrmLeads } from "@/lib/client-ghl-sync";
 
 const GRAPH_API_VERSION = "v25.0";
 const GRAPH_API_BASE = `https://graph.facebook.com/${GRAPH_API_VERSION}`;
@@ -286,6 +287,8 @@ export async function syncClientMeta(clientId: string): Promise<ClientMetaSyncRe
     await storeMetrics("CAMPAIGN", campaignInsights);
     await storeMetrics("ADSET", adsetInsights);
     await storeMetrics("AD", adInsights);
+    // Re-resolve contacts after hierarchy IDs/names change without touching raw CRM data.
+    await rebuildCanonicalCrmLeads(clientId);
 
     const dates = metricDates.map((date) => date.getTime()).sort((a, b) => a - b);
     const result: ClientMetaSyncResult = {

@@ -2,7 +2,6 @@ import Link from "next/link";
 import { AppShell, PageHeader } from "@/components/app-shell";
 import { ClientSelector, selectedClientId } from "@/components/client-selector";
 import { ClientMetaSyncButton } from "@/components/client-meta-sync-button";
-import { isBookedAppointment, resolveCrmAttribution, type AttributionOpportunity } from "@/lib/client-crm-attribution";
 import { prisma } from "@/lib/prisma";
 
 type ReportLevel = "CAMPAIGN" | "ADSET" | "AD";
@@ -42,7 +41,7 @@ type ReportRow = {
   detail: string | null;
   metaTimestamp: Date | null;
   metrics: Metric[];
-  crm: CrmMetrics | null;
+  crm: CrmMetrics;
 };
 
 type CrmMetrics = { leads: number; booked: number };
@@ -248,7 +247,7 @@ export async function ClientMetaReport({
         <section className="overflow-hidden rounded-lg border border-[#272722] bg-[#0c0c0b]">
           <div className="border-b border-[#272722] px-4 py-3">
             <h2 className="text-sm font-medium text-zinc-200">{client.name} {config.singular.toLowerCase()} delivery</h2>
-            <p className="mt-0.5 text-xs text-zinc-600">{range.start} through {range.end} · CRM outcomes use only matched GHL opportunities; Meta lead forms are never CRM leads. Booked matches stages “Booked”, “Appointment Booked”, or “Scheduled”, or tags “booked” / “appointment booked”.</p>
+            <p className="mt-0.5 text-xs text-zinc-600">{range.start} through {range.end} delivery spend · CRM acquisition cohorts use each GHL contact’s lead-created date once. Later booking updates that same cohort. Booked uses selected pipeline stage mappings when configured, otherwise exact conventional booked stages/tags.</p>
           </div>
           {rows.length === 0 ? (
             <EmptyState title={`No stored ${config.singular.toLowerCase()}s`} copy={`Run a Meta sync for ${client.name} to store ${config.singular.toLowerCase()} hierarchy and daily delivery metrics.`} compact />
@@ -273,7 +272,7 @@ export async function ClientMetaReport({
                       <td className="px-4 py-3"><RowName row={row} level={level} clientId={client.id} range={range} />{row.detail && <p className="mt-1 text-[11px] text-zinc-600">{row.detail}</p>}</td>
                       <td className="px-3 py-3 text-zinc-500">{row.parent ?? "—"}</td>
                       <td className="px-3 py-3"><Status status={row.status} /></td>
-                      <MetricCells metrics={metrics} /><CrmCells crm={row.crm} spendCents={metrics.spendCents} />
+                      <MetricCells metrics={metrics} /><CrmCells crm={row.crm} spendCents={metrics.spendCents} drilldown={{ clientId: client.id, level, id: row.id, range }} />
                     </tr>
                   ))}
                 </tbody>
@@ -290,18 +289,19 @@ function MetricCells({ metrics }: { metrics: Metric }) {
   return <><td className="numeric px-3 py-3">{currency(metrics.spendCents)}</td><td className="numeric px-3 py-3">{number(metrics.impressions)}</td><td className="numeric px-3 py-3">{number(metrics.reach)}</td><td className="numeric px-3 py-3">{number(metrics.clicks)}</td><td className="numeric px-3 py-3">{optionalNumber(metrics.linkClicks)}</td><td className="numeric px-3 py-3">{ctr(metrics)}</td><td className="numeric px-3 py-3">{linkCtr(metrics)}</td><td className="numeric px-3 py-3">{cpc(metrics)}</td><td className="numeric px-4 py-3">{costPerLinkClick(metrics)}</td></>;
 }
 
-function sumCrmMetrics(values: Array<CrmMetrics | null>) {
-  const attributed = values.filter((value): value is CrmMetrics => value !== null);
-  return attributed.length === 0 ? null : attributed.reduce((total, value) => ({ leads: total.leads + value.leads, booked: total.booked + value.booked }), { leads: 0, booked: 0 });
+function sumCrmMetrics(values: CrmMetrics[]) {
+  return values.reduce((total, value) => ({ leads: total.leads + value.leads, booked: total.booked + value.booked }), { leads: 0, booked: 0 });
 }
 
 function CrmHeaders() {
   return <><th className="numeric px-3 py-3 font-medium">CRM leads</th><th className="numeric px-3 py-3 font-medium">Booked</th><th className="numeric px-3 py-3 font-medium">CRM CPL</th><th className="numeric px-4 py-3 font-medium">Cost / booked</th></>;
 }
 
-function CrmCells({ crm, spendCents }: { crm: CrmMetrics | null; spendCents: number }) {
-  if (!crm) return <><td className="numeric px-3 py-3">—</td><td className="numeric px-3 py-3">—</td><td className="numeric px-3 py-3">—</td><td className="numeric px-4 py-3">—</td></>;
-  return <><td className="numeric px-3 py-3">{number(crm.leads)}</td><td className="numeric px-3 py-3">{number(crm.booked)}</td><td className="numeric px-3 py-3">{crm.leads > 0 ? currency(spendCents / crm.leads) : "—"}</td><td className="numeric px-4 py-3">{crm.booked > 0 ? currency(spendCents / crm.booked) : "—"}</td></>;
+function CrmCells({ crm, spendCents, drilldown }: { crm: CrmMetrics; spendCents: number; drilldown?: { clientId: string; level: ReportLevel; id: string; range: DateRange } }) {
+  const href = (booked: boolean) => drilldown
+    ? reportHref("/leads", { clientId: drilldown.clientId, crmLevel: drilldown.level, crmId: drilldown.id, booked: booked ? "true" : undefined, preset: "custom", startDate: drilldown.range.start, endDate: drilldown.range.end })
+    : undefined;
+  return <><td className="numeric px-3 py-3">{href(false) ? <Link href={href(false)!} className="text-[#71d8ef] hover:underline">{number(crm.leads)}</Link> : number(crm.leads)}</td><td className="numeric px-3 py-3">{href(true) ? <Link href={href(true)!} className="text-[#71d8ef] hover:underline">{number(crm.booked)}</Link> : number(crm.booked)}</td><td className="numeric px-3 py-3">{crm.leads > 0 ? currency(spendCents / crm.leads) : "—"}</td><td className="numeric px-4 py-3">{crm.booked > 0 ? currency(spendCents / crm.booked) : "—"}</td></>;
 }
 
 function resolveSort(searchParams: ReportSearchParams): { key: SortKey; direction: "asc" | "desc" } {
@@ -399,7 +399,7 @@ async function loadRows(clientId: string, level: ReportLevel, range: DateRange, 
     });
     return sortRowsNewest(campaigns.map((campaign) => ({
       id: campaign.id, name: campaign.name, status: campaign.effectiveStatus ?? campaign.status, parent: null, detail: campaign.objective,
-      metaTimestamp: campaign.startsAt ?? campaign.metaCreatedAt, metrics: campaign.metrics, crm: crmById.get(campaign.id) ?? null,
+      metaTimestamp: campaign.startsAt ?? campaign.metaCreatedAt, metrics: campaign.metrics, crm: crmById.get(campaign.id) ?? { leads: 0, booked: 0 },
     })));
   }
   if (level === "ADSET") {
@@ -409,7 +409,7 @@ async function loadRows(clientId: string, level: ReportLevel, range: DateRange, 
     });
     return sortRowsNewest(adsets.map((adset) => ({
       id: adset.id, name: adset.name, status: adset.status, parent: adset.campaign.name, detail: null,
-      metaTimestamp: adset.startsAt ?? adset.metaCreatedAt, metrics: adset.metrics, crm: crmById.get(adset.id) ?? null,
+      metaTimestamp: adset.startsAt ?? adset.metaCreatedAt, metrics: adset.metrics, crm: crmById.get(adset.id) ?? { leads: 0, booked: 0 },
     })));
   }
   const ads = await prisma.clientMetaAd.findMany({
@@ -418,33 +418,22 @@ async function loadRows(clientId: string, level: ReportLevel, range: DateRange, 
   });
   return sortRowsNewest(ads.map((ad) => ({
     id: ad.id, name: ad.name, status: ad.status, parent: `${ad.adset.campaign.name} / ${ad.adset.name}`, detail: null,
-    metaTimestamp: ad.metaCreatedAt, metrics: ad.metrics, crm: crmById.get(ad.id) ?? null,
+    metaTimestamp: ad.metaCreatedAt, metrics: ad.metrics, crm: crmById.get(ad.id) ?? { leads: 0, booked: 0 },
   })));
 }
 
 async function loadCrmMetrics(clientId: string, level: ReportLevel, range: DateRange) {
-  const [campaigns, adsets, ads, opportunities] = await Promise.all([
-    prisma.clientMetaCampaign.findMany({ where: { clientId }, select: { id: true, metaId: true, name: true } }),
-    prisma.clientMetaAdset.findMany({ where: { clientId }, select: { id: true, metaId: true, name: true, campaignId: true } }),
-    prisma.clientMetaAd.findMany({ where: { clientId }, select: { id: true, metaId: true, name: true, adsetId: true } }),
-    prisma.clientGhlOpportunity.findMany({
-      where: { clientId, sourceCreatedAt: { gte: range.gte, lt: range.lt } },
-      select: {
-        campaignMetaId: true, adsetMetaId: true, adMetaId: true, utmMedium: true, utmCampaign: true, utmContent: true, utmTerm: true,
-        attributionEvidenceJson: true,
-        pipelineStageName: true, tagsJson: true, contact: { select: { tagsJson: true } },
-      },
-    }),
-  ]);
+  const leads = await prisma.clientCrmLead.findMany({
+    where: { clientId, leadCreatedAt: { gte: range.gte, lt: range.lt } },
+    select: { matchedCampaignId: true, matchedAdsetId: true, matchedAdId: true, booked: true },
+  });
   const counts = new Map<string, CrmMetrics>();
-  for (const opportunity of opportunities) {
-    const resolution = resolveCrmAttribution(opportunity as AttributionOpportunity, { campaigns, adsets, ads });
-    if (!resolution.attribution) continue;
-    const id = level === "CAMPAIGN" ? resolution.attribution.campaignId : level === "ADSET" ? resolution.attribution.adsetId : resolution.attribution.adId;
+  for (const lead of leads) {
+    const id = level === "CAMPAIGN" ? lead.matchedCampaignId : level === "ADSET" ? lead.matchedAdsetId : lead.matchedAdId;
     if (!id) continue;
     const current = counts.get(id) ?? { leads: 0, booked: 0 };
     current.leads += 1;
-    if (isBookedAppointment(opportunity)) current.booked += 1;
+    if (lead.booked) current.booked += 1;
     counts.set(id, current);
   }
   return counts;

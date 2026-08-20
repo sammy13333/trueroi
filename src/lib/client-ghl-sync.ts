@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { decryptSecret } from "@/lib/secrets";
+import { isBookedAppointment, resolveCrmAttribution, type AttributionOpportunity } from "@/lib/client-crm-attribution";
 
 const GHL_API_BASE = "https://services.leadconnectorhq.com";
 const GHL_VERSION = "2021-07-28";
@@ -63,6 +64,10 @@ type GhlOpportunity = {
 type GhlOpportunityPage = {
   opportunities?: GhlOpportunity[];
   meta?: { startAfterId?: string | null };
+};
+type GhlContactPage = {
+  contacts?: GhlContact[];
+  meta?: { startAfterId?: string | null; nextStartAfterId?: string | null };
 };
 type GhlContactResponse = GhlContact | { contact?: GhlContact };
 
@@ -172,14 +177,20 @@ function extractAttributionEvidence(record: GhlOpportunity | GhlContact, scope: 
   return evidence.filter((item, index, items) => items.findIndex((candidate) => candidate.scope === item.scope && candidate.field === item.field && candidate.source === item.source && candidate.value === item.value) === index);
 }
 
-function attribution(opportunity: GhlOpportunity, contact: GhlContact | undefined) {
-  const evidence = [...extractAttributionEvidence(opportunity, "opportunity"), ...(contact ? extractAttributionEvidence(contact, "contact") : [])];
+function attributionFromEvidence(evidence: AttributionEvidence[]) {
   const first = (field: AttributionField) => evidence.find((item) => item.field === field)?.value;
   return {
     attributionSource: first("attributionSource"), utmSource: first("utmSource"), utmMedium: first("utmMedium"), utmCampaign: first("utmCampaign"),
     utmContent: first("utmContent"), utmTerm: first("utmTerm"), campaignMetaId: first("campaignMetaId"), adsetMetaId: first("adsetMetaId"),
     adMetaId: first("adMetaId"), attributionEvidenceJson: JSON.stringify(evidence),
   };
+}
+
+function attribution(opportunity: GhlOpportunity, contact: GhlContact | undefined) {
+  return attributionFromEvidence([
+    ...extractAttributionEvidence(opportunity, "opportunity"),
+    ...(contact ? extractAttributionEvidence(contact, "contact") : []),
+  ]);
 }
 
 function tagsJson(value: unknown) {
@@ -242,6 +253,25 @@ async function fetchOpportunities(locationId: string, token: string): Promise<Gh
   return opportunities;
 }
 
+async function fetchContacts(locationId: string, token: string): Promise<GhlContact[]> {
+  const contacts: GhlContact[] = [];
+  let startAfterId: string | undefined;
+  const seenCursors = new Set<string>();
+  do {
+    const page = await ghlGet<GhlContactPage>("/contacts/", token, {
+      locationId,
+      limit: String(GHL_PAGE_SIZE),
+      ...(startAfterId ? { startAfterId } : {}),
+    });
+    contacts.push(...(Array.isArray(page.contacts) ? page.contacts : []));
+    const next = asString(page.meta?.nextStartAfterId) ?? asString(page.meta?.startAfterId);
+    if (!next || seenCursors.has(next)) break;
+    seenCursors.add(next);
+    startAfterId = next;
+  } while (startAfterId);
+  return contacts;
+}
+
 function contactFromResponse(payload: GhlContactResponse): GhlContact | undefined {
   return "contact" in payload ? payload.contact : payload as GhlContact;
 }
@@ -267,6 +297,86 @@ async function fetchOpportunityContacts(opportunities: GhlOpportunity[], token: 
   return contacts;
 }
 
+export async function rebuildCanonicalCrmLeads(clientId: string) {
+  const [campaigns, adsets, ads, contacts, pipelines] = await Promise.all([
+    prisma.clientMetaCampaign.findMany({ where: { clientId }, select: { id: true, metaId: true, name: true } }),
+    prisma.clientMetaAdset.findMany({ where: { clientId }, select: { id: true, metaId: true, name: true, campaignId: true } }),
+    prisma.clientMetaAd.findMany({ where: { clientId }, select: { id: true, metaId: true, name: true, adsetId: true } }),
+    prisma.clientGhlContact.findMany({
+      where: { clientId },
+      select: {
+        id: true, ghlId: true, sourceCreatedAt: true, attributionSource: true, utmSource: true, utmMedium: true, utmCampaign: true, utmContent: true, utmTerm: true,
+        campaignMetaId: true, adsetMetaId: true, adMetaId: true, attributionEvidenceJson: true,
+        opportunities: {
+          orderBy: [{ sourceCreatedAt: "asc" }, { createdAt: "asc" }],
+          select: {
+            ghlId: true, sourceCreatedAt: true, sourceUpdatedAt: true, lastStatusChangeAt: true, pipelineStageGhlId: true, pipelineStageName: true,
+            attributionSource: true, utmSource: true, utmMedium: true, utmCampaign: true, utmContent: true, utmTerm: true,
+            campaignMetaId: true, adsetMetaId: true, adMetaId: true, attributionEvidenceJson: true, tagsJson: true,
+            pipeline: { select: { ghlId: true, selected: true, bookedStageIdsJson: true } },
+          },
+        },
+        tagsJson: true,
+      },
+    }),
+    prisma.clientPipeline.findMany({ where: { clientId }, select: { ghlId: true, selected: true, bookedStageIdsJson: true } }),
+  ]);
+  const hierarchy = { campaigns, adsets, ads };
+  for (const contact of contacts) {
+    const candidates: Array<AttributionOpportunity & { ghlId?: string; pipelineStageGhlId?: string | null; pipelineStageName?: string | null; tagsJson?: string; pipeline?: { ghlId: string; selected: boolean; bookedStageIdsJson: string } | null }> = [
+      ...contact.opportunities,
+      {
+        campaignMetaId: contact.campaignMetaId, adsetMetaId: contact.adsetMetaId, adMetaId: contact.adMetaId,
+        utmMedium: contact.utmMedium, utmCampaign: contact.utmCampaign, utmContent: contact.utmContent, utmTerm: contact.utmTerm,
+        attributionEvidenceJson: contact.attributionEvidenceJson,
+      },
+    ];
+    const resolutions = candidates.map((candidate) => ({ candidate, resolution: resolveCrmAttribution(candidate, hierarchy) }));
+    const matched = resolutions.filter((item) => item.resolution.attribution);
+    const keys = new Set(matched.map(({ resolution }) => `${resolution.attribution!.campaignId}/${resolution.attribution!.adsetId ?? ""}/${resolution.attribution!.adId ?? ""}`));
+    const selected = keys.size <= 1 ? matched[0] ?? resolutions[0] : undefined;
+    const raw = selected?.candidate ?? candidates.at(-1)!;
+    const resolution = selected?.resolution ?? {
+      attribution: null, method: null, evidence: [], unmatchedReason: "Conflicting exact attribution evidence exists across this contact’s opportunities.",
+    };
+    const bookedOpportunity = contact.opportunities.find((opportunity) => isBookedAppointment({
+      pipelineStageGhlId: opportunity.pipelineStageGhlId,
+      pipelineStageName: opportunity.pipelineStageName,
+      pipeline: opportunity.pipeline,
+      tagsJson: opportunity.tagsJson,
+      contact: { tagsJson: contact.tagsJson },
+    }, pipelines));
+    await prisma.clientCrmLead.upsert({
+      where: { contactId: contact.id },
+      create: {
+        clientId, contactId: contact.id, ghlContactId: contact.ghlId, ghlOpportunityId: raw.ghlId,
+        pipelineGhlId: raw.pipeline?.ghlId, pipelineStageGhlId: raw.pipelineStageGhlId, pipelineStageName: raw.pipelineStageName,
+        attributionSource: "attributionSource" in raw ? raw.attributionSource ?? null : null,
+        utmSource: "utmSource" in raw ? raw.utmSource ?? null : null,
+        utmMedium: raw.utmMedium, utmCampaign: raw.utmCampaign, utmContent: raw.utmContent, utmTerm: raw.utmTerm,
+        campaignMetaId: raw.campaignMetaId, adsetMetaId: raw.adsetMetaId, adMetaId: raw.adMetaId,
+        matchedCampaignId: resolution.attribution?.campaignId, matchedAdsetId: resolution.attribution?.adsetId, matchedAdId: resolution.attribution?.adId,
+        attributionMethod: resolution.method, unmatchedReason: resolution.unmatchedReason,
+        booked: Boolean(bookedOpportunity), bookedAt: bookedOpportunity?.lastStatusChangeAt ?? bookedOpportunity?.sourceUpdatedAt ?? null,
+        leadCreatedAt: contact.sourceCreatedAt ?? contact.opportunities[0]?.sourceCreatedAt ?? null,
+        attributionEvidenceJson: JSON.stringify(resolution.evidence),
+      },
+      update: {
+        ghlOpportunityId: raw.ghlId, pipelineGhlId: raw.pipeline?.ghlId, pipelineStageGhlId: raw.pipelineStageGhlId, pipelineStageName: raw.pipelineStageName,
+        attributionSource: "attributionSource" in raw ? raw.attributionSource ?? null : null,
+        utmSource: "utmSource" in raw ? raw.utmSource ?? null : null,
+        utmMedium: raw.utmMedium, utmCampaign: raw.utmCampaign, utmContent: raw.utmContent, utmTerm: raw.utmTerm,
+        campaignMetaId: raw.campaignMetaId, adsetMetaId: raw.adsetMetaId, adMetaId: raw.adMetaId,
+        matchedCampaignId: resolution.attribution?.campaignId, matchedAdsetId: resolution.attribution?.adsetId, matchedAdId: resolution.attribution?.adId,
+        attributionMethod: resolution.method, unmatchedReason: resolution.unmatchedReason,
+        booked: Boolean(bookedOpportunity), bookedAt: bookedOpportunity?.lastStatusChangeAt ?? bookedOpportunity?.sourceUpdatedAt ?? null,
+        leadCreatedAt: contact.sourceCreatedAt ?? contact.opportunities[0]?.sourceCreatedAt ?? null,
+        attributionEvidenceJson: JSON.stringify(resolution.evidence),
+      },
+    });
+  }
+}
+
 export async function syncClientGhl(clientId: string): Promise<ClientGhlSyncResult | null> {
   const client = await prisma.client.findUnique({
     where: { id: clientId },
@@ -290,9 +400,10 @@ export async function syncClientGhl(clientId: string): Promise<ClientGhlSyncResu
       throw new GhlFailure("The saved GoHighLevel private integration token could not be decrypted. Replace it and try again.", 422);
     }
 
-    const [pipelinePayload, opportunities] = await Promise.all([
+    const [pipelinePayload, opportunities, fetchedContacts] = await Promise.all([
       ghlGet<{ pipelines?: GhlPipeline[] }>("/opportunities/pipelines", token, { locationId: client.ghlLocationId }),
       fetchOpportunities(client.ghlLocationId, token),
+      fetchContacts(client.ghlLocationId, token),
     ]);
     const detailedContacts = await fetchOpportunityContacts(opportunities, token);
     const pipelines = (Array.isArray(pipelinePayload.pipelines) ? pipelinePayload.pipelines : []).filter(
@@ -311,7 +422,35 @@ export async function syncClientGhl(clientId: string): Promise<ClientGhlSyncResu
       pipelineIds.set(pipeline.id, { id: record.id, stages });
     }
 
-    let storedContacts = 0;
+    const localContactIds = new Map<string, string>();
+    const upsertContact = async (contactDetails: GhlContact, fallbackId?: string) => {
+      const ghlId = asString(contactDetails.id) ?? fallbackId;
+      if (!ghlId) return null;
+      const fields = attributionFromEvidence(extractAttributionEvidence(contactDetails, "contact"));
+      const contact = await prisma.clientGhlContact.upsert({
+        where: { clientId_ghlId: { clientId, ghlId } },
+        create: {
+          clientId, ghlId, firstName: contactDetails.firstName, lastName: contactDetails.lastName,
+          email: contactDetails.email, phone: contactDetails.phone, tagsJson: tagsJson(contactDetails.tags),
+          ...fields,
+          sourceCreatedAt: parseDate(contactDetails.dateAdded ?? contactDetails.createdAt),
+          sourceUpdatedAt: parseDate(contactDetails.dateUpdated ?? contactDetails.updatedAt),
+        },
+        update: {
+          firstName: contactDetails.firstName, lastName: contactDetails.lastName,
+          email: contactDetails.email, phone: contactDetails.phone, tagsJson: tagsJson(contactDetails.tags),
+          ...fields,
+          sourceCreatedAt: parseDate(contactDetails.dateAdded ?? contactDetails.createdAt),
+          sourceUpdatedAt: parseDate(contactDetails.dateUpdated ?? contactDetails.updatedAt),
+        },
+        select: { id: true },
+      });
+      localContactIds.set(ghlId, contact.id);
+      return contact.id;
+    };
+    for (const contact of fetchedContacts) await upsertContact(contact);
+
+    let storedContacts = localContactIds.size;
     let storedOpportunities = 0;
     for (const opportunity of opportunities) {
       const ghlId = asString(opportunity.id);
@@ -320,38 +459,9 @@ export async function syncClientGhl(clientId: string): Promise<ClientGhlSyncResu
       const embeddedContact = opportunity.contact;
       const contactGhlId = asString(embeddedContact?.id) ?? asString(opportunity.contactId);
       const contactDetails = (contactGhlId ? detailedContacts.get(contactGhlId) : undefined) ?? embeddedContact;
-      const contactAttributionEvidence = contactDetails ? extractAttributionEvidence(contactDetails, "contact") : [];
-      let contactId: string | null = null;
-      if (contactGhlId) {
-        const contact = await prisma.clientGhlContact.upsert({
-          where: { clientId_ghlId: { clientId, ghlId: contactGhlId } },
-          create: {
-            clientId,
-            ghlId: contactGhlId,
-            firstName: contactDetails?.firstName,
-            lastName: contactDetails?.lastName,
-            email: contactDetails?.email,
-            phone: contactDetails?.phone,
-            tagsJson: tagsJson(contactDetails?.tags),
-            attributionEvidenceJson: JSON.stringify(contactAttributionEvidence),
-            sourceCreatedAt: parseDate(contactDetails?.dateAdded ?? contactDetails?.createdAt),
-            sourceUpdatedAt: parseDate(contactDetails?.dateUpdated ?? contactDetails?.updatedAt),
-          },
-          update: {
-            firstName: contactDetails?.firstName,
-            lastName: contactDetails?.lastName,
-            email: contactDetails?.email,
-            phone: contactDetails?.phone,
-            tagsJson: tagsJson(contactDetails?.tags),
-            attributionEvidenceJson: JSON.stringify(contactAttributionEvidence),
-            sourceCreatedAt: parseDate(contactDetails?.dateAdded ?? contactDetails?.createdAt),
-            sourceUpdatedAt: parseDate(contactDetails?.dateUpdated ?? contactDetails?.updatedAt),
-          },
-          select: { id: true },
-        });
-        contactId = contact.id;
-        storedContacts += 1;
-      }
+      const contactId = contactGhlId
+        ? localContactIds.get(contactGhlId) ?? (contactDetails ? await upsertContact(contactDetails, contactGhlId) : null)
+        : null;
 
       const pipeline = opportunity.pipelineId ? pipelineIds.get(opportunity.pipelineId) : undefined;
       const stage = pipeline?.stages.find((item) => item.id === opportunity.pipelineStageId);
@@ -391,6 +501,7 @@ export async function syncClientGhl(clientId: string): Promise<ClientGhlSyncResu
       });
       storedOpportunities += 1;
     }
+    await rebuildCanonicalCrmLeads(clientId);
 
     const result: ClientGhlSyncResult = {
       clientId,

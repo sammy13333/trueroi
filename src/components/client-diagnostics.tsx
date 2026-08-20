@@ -37,7 +37,7 @@ export async function ClientDiagnostics({
     );
   }
 
-  const [client, metrics] = await Promise.all([
+  const [client, metrics, unmatchedLeads, bookedLeads] = await Promise.all([
     prisma.client.findUniqueOrThrow({
       where: { id: clientId },
       select: {
@@ -60,6 +60,8 @@ export async function ClientDiagnostics({
             dailyMetaMetrics: true,
             pipelines: true,
             ghlOpportunities: true,
+            ghlContacts: true,
+            crmLeads: true,
           },
         },
       },
@@ -69,6 +71,8 @@ export async function ClientDiagnostics({
       _min: { date: true },
       _max: { date: true },
     }),
+    prisma.clientCrmLead.count({ where: { clientId, unmatchedReason: { not: null } } }),
+    prisma.clientCrmLead.count({ where: { clientId, booked: true } }),
   ]);
 
   const latestMetaSync = client.syncLogs.find((log) => log.mode === "META");
@@ -110,6 +114,8 @@ export async function ClientDiagnostics({
           <CoverageCard label="Daily Meta metrics" value={count(client._count.dailyMetaMetrics)} detail={metricRange} />
           <CoverageCard label="GHL pipelines" value={count(client._count.pipelines)} detail="Stored pipeline records" />
           <CoverageCard label="GHL opportunities" value={count(client._count.ghlOpportunities)} detail="Stored CRM opportunity records" />
+          <CoverageCard label="Canonical CRM leads" value={count(client._count.crmLeads)} detail={`${count(bookedLeads)} booked · deduped by GHL contact`} />
+          <CoverageCard label="Unmatched CRM leads" value={count(unmatchedLeads)} detail="Exact ID/name matching failures are retained for review" />
         </section>
 
         <section className="overflow-hidden rounded-lg border border-[#272722] bg-[#0c0c0b]">
@@ -120,7 +126,7 @@ export async function ClientDiagnostics({
           <div className="divide-y divide-[#272722] text-sm">
             <SourceCheck label="Meta hierarchy" value={`${count(client._count.metaCampaigns)} campaigns · ${count(client._count.metaAdsets)} ad sets · ${count(client._count.metaAds)} ads`} detail={syncDetail(latestMetaSync)} />
             <SourceCheck label="Daily Meta delivery" value={`${count(client._count.dailyMetaMetrics)} metric rows`} detail={metricRange} />
-            <SourceCheck label="GoHighLevel CRM" value={`${count(client._count.pipelines)} pipelines · ${count(client._count.ghlOpportunities)} opportunities`} detail={syncDetail(latestGhlSync)} />
+            <SourceCheck label="GoHighLevel CRM" value={`${count(client._count.pipelines)} pipelines · ${count(client._count.ghlContacts)} contacts · ${count(client._count.ghlOpportunities)} opportunities`} detail={`${syncDetail(latestGhlSync)} · ${count(client._count.crmLeads)} canonical contacts, ${count(unmatchedLeads)} unmatched`} />
           </div>
         </section>
       </div>

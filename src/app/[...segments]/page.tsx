@@ -10,6 +10,7 @@ import { ClientInsights } from "@/components/client-insights";
 import { ClientReportPlaceholder } from "@/components/client-report-placeholder";
 import { ClientGhlSyncButton } from "@/components/client-ghl-sync-button";
 import { ClientDiagnostics } from "@/components/client-diagnostics";
+import { ClientBookingMappings } from "@/components/client-booking-mappings";
 import { prisma } from "@/lib/prisma";
 
 const clientTitles: Record<string, [string, string]> = {
@@ -44,7 +45,7 @@ export default async function ClientRoutePage({
     return <ClientMetaReport level={section === "campaigns" ? "CAMPAIGN" : section === "adsets" ? "ADSET" : "AD"} requestedClientId={filters.clientId} searchParams={filters} />;
   }
   if (section === "leads") {
-    return <AppShell><PageHeader eyebrow="Client ROI" title="Client lead tracking" description="GoHighLevel CRM opportunities by client, pipeline, and stage. Meta delivery actions are excluded." /><ClientGhlLeadTracking requestedClientId={filters.clientId} /></AppShell>;
+    return <AppShell><PageHeader eyebrow="Client ROI" title="Client lead tracking" description="GoHighLevel CRM opportunities by client, pipeline, and stage. Meta delivery actions are excluded." /><ClientGhlLeadTracking requestedClientId={filters.clientId} searchParams={filters} /></AppShell>;
   }
   if (section === "insights") {
     return <ClientInsights requestedClientId={filters.clientId} />;
@@ -66,7 +67,7 @@ export default async function ClientRoutePage({
     where: { id: detail },
     select: {
       id: true, name: true, industry: true, metaAdAccountId: true, ghlLocationId: true, metaAccessTokenEnc: true, ghlPrivateTokenEnc: true, lifecycle: true,
-      pipelines: { select: { id: true, name: true } },
+      pipelines: { select: { id: true, ghlId: true, name: true, stagesJson: true, selected: true, bookedStageIdsJson: true } },
       syncLogs: { orderBy: { createdAt: "desc" }, take: 1, select: { status: true, message: true, latestMetricDate: true, completedAt: true, createdAt: true } },
       dailyMetaMetrics: { orderBy: { date: "desc" }, take: 1, select: { date: true } },
       _count: { select: { dailyMetaMetrics: true } },
@@ -108,7 +109,7 @@ export default async function ClientRoutePage({
                 <p className="mt-3 text-xs text-zinc-500">Stored daily metric rows: {client._count.dailyMetaMetrics} · Latest coverage: {latestCoverage ? latestCoverage.toISOString().slice(0, 10) : "No daily insights stored"}</p>
               </section>;
             })()}
-            <div className="mt-5 border-t pt-5"><FetchPipelinesButton clientId={client.id} />{client.pipelines.length > 0 && <p className="mt-3 text-xs text-emerald-400">Imported pipelines: {client.pipelines.map((pipeline) => pipeline.name).join(", ")}</p>}</div>
+            <div className="mt-5 border-t pt-5"><FetchPipelinesButton clientId={client.id} />{client.pipelines.length > 0 && <><p className="mt-3 text-xs text-emerald-400">Imported pipelines: {client.pipelines.map((pipeline) => pipeline.name).join(", ")}</p><ClientBookingMappings clientId={client.id} pipelines={client.pipelines.map((pipeline) => ({ ghlId: pipeline.ghlId, name: pipeline.name, selected: pipeline.selected, bookedStageIds: parseStringArray(pipeline.bookedStageIdsJson), stages: parseStages(pipeline.stagesJson) }))} /></>}</div>
           </section>
         </div>
       ) : section === "clients" ? (
@@ -129,4 +130,12 @@ export default async function ClientRoutePage({
       )}
     </AppShell>
   );
+}
+
+function parseStringArray(value: string) {
+  try { const parsed: unknown = JSON.parse(value); return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : []; } catch { return []; }
+}
+
+function parseStages(value: string): Array<{ id?: string; name?: string }> {
+  try { const parsed: unknown = JSON.parse(value); return Array.isArray(parsed) ? parsed.filter((item): item is { id?: string; name?: string } => Boolean(item && typeof item === "object")) : []; } catch { return []; }
 }

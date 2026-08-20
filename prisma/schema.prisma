@@ -88,6 +88,7 @@ model Client {
   pipelines            ClientPipeline[]
   ghlContacts          ClientGhlContact[]
   ghlOpportunities     ClientGhlOpportunity[]
+  crmLeads             ClientCrmLead[]
   metaCampaigns        ClientMetaCampaign[]
   metaAdsets           ClientMetaAdset[]
   metaAds              ClientMetaAd[]
@@ -104,6 +105,7 @@ model ClientPipeline {
   name          String
   stagesJson    String                 @default("[]")
   selected      Boolean                @default(false)
+  bookedStageIdsJson String             @default("[]")
   opportunities ClientGhlOpportunity[]
   updatedAt     DateTime               @updatedAt
 
@@ -121,6 +123,15 @@ model ClientGhlContact {
   phone           String?
   tagsJson        String                 @default("[]")
   attributionEvidenceJson String          @default("[]")
+  attributionSource String?
+  utmSource       String?
+  utmMedium       String?
+  utmCampaign     String?
+  utmContent      String?
+  utmTerm         String?
+  campaignMetaId  String?
+  adsetMetaId     String?
+  adMetaId        String?
   sourceCreatedAt DateTime?
   sourceUpdatedAt DateTime?
   opportunities   ClientGhlOpportunity[]
@@ -129,6 +140,48 @@ model ClientGhlContact {
 
   @@unique([clientId, ghlId])
   @@index([clientId])
+  @@index([clientId, sourceCreatedAt])
+}
+
+// One acquisition cohort record per GHL contact. Opportunities remain raw CRM
+// records; this materialized record prevents opportunity duplicates in ROI reports.
+model ClientCrmLead {
+  id                    String                 @id @default(cuid())
+  clientId              String
+  client                Client                 @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  contactId             String                 @unique
+  contact               ClientGhlContact       @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  ghlContactId          String
+  ghlOpportunityId      String?
+  pipelineGhlId         String?
+  pipelineStageGhlId    String?
+  pipelineStageName     String?
+  attributionSource     String?
+  utmSource             String?
+  utmMedium             String?
+  utmCampaign           String?
+  utmContent            String?
+  utmTerm               String?
+  campaignMetaId        String?
+  adsetMetaId           String?
+  adMetaId              String?
+  matchedCampaignId     String?
+  matchedAdsetId        String?
+  matchedAdId           String?
+  attributionMethod     String?
+  unmatchedReason       String?
+  booked                Boolean                @default(false)
+  bookedAt              DateTime?
+  leadCreatedAt         DateTime?
+  attributionEvidenceJson String               @default("[]")
+  createdAt             DateTime                @default(now())
+  updatedAt             DateTime                @updatedAt
+
+  @@unique([clientId, ghlContactId])
+  @@index([clientId, leadCreatedAt])
+  @@index([clientId, matchedCampaignId])
+  @@index([clientId, matchedAdsetId])
+  @@index([clientId, matchedAdId])
 }
 
 model ClientGhlOpportunity {
