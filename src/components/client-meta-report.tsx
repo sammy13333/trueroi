@@ -2,6 +2,7 @@ import Link from "next/link";
 import { AppShell, PageHeader } from "@/components/app-shell";
 import { ClientSelector, selectedClientId } from "@/components/client-selector";
 import { ClientMetaSyncButton } from "@/components/client-meta-sync-button";
+import { aggregateCanonicalCrmMetrics } from "@/lib/client-crm-attribution";
 import { prisma } from "@/lib/prisma";
 
 type ReportLevel = "CAMPAIGN" | "ADSET" | "AD";
@@ -425,18 +426,9 @@ async function loadRows(clientId: string, level: ReportLevel, range: DateRange, 
 async function loadCrmMetrics(clientId: string, level: ReportLevel, range: DateRange) {
   const leads = await prisma.clientCrmLead.findMany({
     where: { clientId, leadCreatedAt: { gte: range.gte, lt: range.lt } },
-    select: { matchedCampaignId: true, matchedAdsetId: true, matchedAdId: true, booked: true },
+    select: { contactId: true, matchedCampaignId: true, matchedAdsetId: true, matchedAdId: true, booked: true },
   });
-  const counts = new Map<string, CrmMetrics>();
-  for (const lead of leads) {
-    const id = level === "CAMPAIGN" ? lead.matchedCampaignId : level === "ADSET" ? lead.matchedAdsetId : lead.matchedAdId;
-    if (!id) continue;
-    const current = counts.get(id) ?? { leads: 0, booked: 0 };
-    current.leads += 1;
-    if (lead.booked) current.booked += 1;
-    counts.set(id, current);
-  }
-  return counts;
+  return aggregateCanonicalCrmMetrics(leads, level);
 }
 
 function sortRowsNewest(rows: ReportRow[]) {

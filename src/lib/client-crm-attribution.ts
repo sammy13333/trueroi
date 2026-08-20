@@ -195,6 +195,31 @@ function parseTags(value: string) {
  */
 export type BookingPipeline = { ghlId: string; selected: boolean; bookedStageIdsJson: string };
 
+export type CanonicalCrmLeadMetric = {
+  contactId: string;
+  matchedCampaignId: string | null;
+  matchedAdsetId: string | null;
+  matchedAdId: string | null;
+  booked: boolean;
+};
+
+/** Counts canonical contact records once, so parent rollups cannot reintroduce opportunity duplicates. */
+export function aggregateCanonicalCrmMetrics(leads: CanonicalCrmLeadMetric[], level: "CAMPAIGN" | "ADSET" | "AD") {
+  const counts = new Map<string, { leads: number; booked: number }>();
+  const seenContacts = new Set<string>();
+  for (const lead of leads) {
+    if (seenContacts.has(lead.contactId)) continue;
+    seenContacts.add(lead.contactId);
+    const id = level === "CAMPAIGN" ? lead.matchedCampaignId : level === "ADSET" ? lead.matchedAdsetId : lead.matchedAdId;
+    if (!id) continue;
+    const current = counts.get(id) ?? { leads: 0, booked: 0 };
+    current.leads += 1;
+    if (lead.booked) current.booked += 1;
+    counts.set(id, current);
+  }
+  return counts;
+}
+
 function bookedStageIds(value: string) {
   try {
     const parsed: unknown = JSON.parse(value);
