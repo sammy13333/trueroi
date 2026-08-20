@@ -120,6 +120,7 @@ model ClientGhlContact {
   email           String?
   phone           String?
   tagsJson        String                 @default("[]")
+  attributionEvidenceJson String          @default("[]")
   sourceCreatedAt DateTime?
   sourceUpdatedAt DateTime?
   opportunities   ClientGhlOpportunity[]
@@ -154,6 +155,7 @@ model ClientGhlOpportunity {
   adsetMetaId        String?
   adMetaId           String?
   tagsJson           String            @default("[]")
+  attributionEvidenceJson String       @default("[]")
   sourceCreatedAt    DateTime?
   sourceUpdatedAt    DateTime?
   lastStatusChangeAt DateTime?

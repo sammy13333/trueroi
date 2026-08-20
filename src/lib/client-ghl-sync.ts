@@ -18,6 +18,9 @@ type GhlContact = {
   createdAt?: string;
   updatedAt?: string;
   tags?: unknown;
+  customFields?: unknown;
+  customField?: unknown;
+  customData?: unknown;
 };
 type GhlOpportunity = {
   id?: string;
@@ -42,6 +45,9 @@ type GhlOpportunity = {
   adsetId?: string;
   adId?: string;
   tags?: unknown;
+  customFields?: unknown;
+  customField?: unknown;
+  customData?: unknown;
   attributions?: {
     source?: string;
     utmSource?: string;
@@ -91,18 +97,87 @@ function cents(value: number | string | undefined): number | null {
   return Number.isFinite(amount) ? Math.round(amount * 100) : null;
 }
 
-function attribution(opportunity: GhlOpportunity) {
-  const values = opportunity.attributions;
+type AttributionField = "attributionSource" | "utmSource" | "utmMedium" | "utmCampaign" | "utmContent" | "utmTerm" | "campaignMetaId" | "adsetMetaId" | "adMetaId";
+type AttributionEvidence = { scope: "opportunity" | "contact"; field: AttributionField; source: string; value: string };
+
+const customFieldAliases = new Map<string, AttributionField>([
+  ["attribution_source", "attributionSource"], ["source", "attributionSource"],
+  ["utm_source", "utmSource"], ["utm_medium", "utmMedium"], ["utm_campaign", "utmCampaign"], ["utm_content", "utmContent"], ["utm_term", "utmTerm"],
+  ["campaign_id", "campaignMetaId"], ["meta_campaign_id", "campaignMetaId"], ["facebook_campaign_id", "campaignMetaId"], ["fb_campaign_id", "campaignMetaId"],
+  ["adset_id", "adsetMetaId"], ["ad_set_id", "adsetMetaId"], ["meta_adset_id", "adsetMetaId"], ["facebook_adset_id", "adsetMetaId"], ["fb_adset_id", "adsetMetaId"],
+  ["ad_id", "adMetaId"], ["meta_ad_id", "adMetaId"], ["facebook_ad_id", "adMetaId"], ["fb_ad_id", "adMetaId"],
+]);
+
+function normalizedFieldName(value: string) {
+  return value.trim().toLocaleLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+}
+
+function safeAttributionValue(value: unknown) {
+  const string = typeof value === "string" ? value : typeof value === "number" ? String(value) : undefined;
+  return string?.replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, 512) || undefined;
+}
+
+function customFieldEvidence(value: unknown, scope: AttributionEvidence["scope"], source: string): AttributionEvidence[] {
+  const evidence: AttributionEvidence[] = [];
+  const add = (name: unknown, rawValue: unknown) => {
+    if (typeof name !== "string") return;
+    const field = customFieldAliases.get(normalizedFieldName(name));
+    const storedValue = safeAttributionValue(rawValue);
+    if (field && storedValue) evidence.push({ scope, field, source: `${source}.${name}`, value: storedValue });
+  };
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      if (!item || typeof item !== "object") continue;
+      const field = item as Record<string, unknown>;
+      add(field.fieldKey ?? field.fieldName ?? field.name ?? field.key, field.value ?? field.fieldValue ?? field.field_value);
+    }
+  } else if (value && typeof value === "object") {
+    for (const [name, fieldValue] of Object.entries(value as Record<string, unknown>)) add(name, fieldValue);
+  }
+  return evidence;
+}
+
+function extractAttributionEvidence(record: GhlOpportunity | GhlContact, scope: AttributionEvidence["scope"]): AttributionEvidence[] {
+  const evidence: AttributionEvidence[] = [];
+  const add = (field: AttributionField, source: string, value: unknown) => {
+    const storedValue = safeAttributionValue(value);
+    if (storedValue) evidence.push({ scope, field, source, value: storedValue });
+  };
+  const values = "attributions" in record ? record.attributions : undefined;
+  add("attributionSource", `${scope}.attributionSource`, "attributionSource" in record ? record.attributionSource : undefined);
+  add("attributionSource", `${scope}.source`, "source" in record ? record.source : undefined);
+  add("attributionSource", `${scope}.attributions.source`, values?.source);
+  add("utmSource", `${scope}.utmSource`, "utmSource" in record ? record.utmSource : undefined);
+  add("utmSource", `${scope}.attributions.utmSource`, values?.utmSource);
+  add("utmMedium", `${scope}.utmMedium`, "utmMedium" in record ? record.utmMedium : undefined);
+  add("utmMedium", `${scope}.attributions.utmMedium`, values?.utmMedium);
+  add("utmCampaign", `${scope}.utmCampaign`, "utmCampaign" in record ? record.utmCampaign : undefined);
+  add("utmCampaign", `${scope}.attributions.utmCampaign`, values?.utmCampaign);
+  add("utmContent", `${scope}.utmContent`, "utmContent" in record ? record.utmContent : undefined);
+  add("utmContent", `${scope}.attributions.utmContent`, values?.utmContent);
+  add("utmTerm", `${scope}.utmTerm`, "utmTerm" in record ? record.utmTerm : undefined);
+  add("utmTerm", `${scope}.attributions.utmTerm`, values?.utmTerm);
+  add("campaignMetaId", `${scope}.campaignId`, "campaignId" in record ? record.campaignId : undefined);
+  add("campaignMetaId", `${scope}.attributions.campaignId`, values?.campaignId);
+  add("adsetMetaId", `${scope}.adsetId`, "adsetId" in record ? record.adsetId : undefined);
+  add("adsetMetaId", `${scope}.attributions.adsetId`, values?.adsetId);
+  add("adMetaId", `${scope}.adId`, "adId" in record ? record.adId : undefined);
+  add("adMetaId", `${scope}.attributions.adId`, values?.adId);
+  evidence.push(
+    ...customFieldEvidence(record.customFields, scope, `${scope}.customFields`),
+    ...customFieldEvidence(record.customField, scope, `${scope}.customField`),
+    ...customFieldEvidence(record.customData, scope, `${scope}.customData`),
+  );
+  return evidence.filter((item, index, items) => items.findIndex((candidate) => candidate.scope === item.scope && candidate.field === item.field && candidate.source === item.source && candidate.value === item.value) === index);
+}
+
+function attribution(opportunity: GhlOpportunity, contact: GhlContact | undefined) {
+  const evidence = [...extractAttributionEvidence(opportunity, "opportunity"), ...(contact ? extractAttributionEvidence(contact, "contact") : [])];
+  const first = (field: AttributionField) => evidence.find((item) => item.field === field)?.value;
   return {
-    attributionSource: asString(opportunity.attributionSource) ?? asString(opportunity.source) ?? asString(values?.source),
-    utmSource: asString(opportunity.utmSource) ?? asString(values?.utmSource),
-    utmMedium: asString(opportunity.utmMedium) ?? asString(values?.utmMedium),
-    utmCampaign: asString(opportunity.utmCampaign) ?? asString(values?.utmCampaign),
-    utmContent: asString(opportunity.utmContent) ?? asString(values?.utmContent),
-    utmTerm: asString(opportunity.utmTerm) ?? asString(values?.utmTerm),
-    campaignMetaId: asString(opportunity.campaignId) ?? asString(values?.campaignId),
-    adsetMetaId: asString(opportunity.adsetId) ?? asString(values?.adsetId),
-    adMetaId: asString(opportunity.adId) ?? asString(values?.adId),
+    attributionSource: first("attributionSource"), utmSource: first("utmSource"), utmMedium: first("utmMedium"), utmCampaign: first("utmCampaign"),
+    utmContent: first("utmContent"), utmTerm: first("utmTerm"), campaignMetaId: first("campaignMetaId"), adsetMetaId: first("adsetMetaId"),
+    adMetaId: first("adMetaId"), attributionEvidenceJson: JSON.stringify(evidence),
   };
 }
 
@@ -217,6 +292,7 @@ export async function syncClientGhl(clientId: string): Promise<ClientGhlSyncResu
 
       const embeddedContact = opportunity.contact;
       const contactGhlId = asString(embeddedContact?.id) ?? asString(opportunity.contactId);
+      const contactAttributionEvidence = embeddedContact ? extractAttributionEvidence(embeddedContact, "contact") : [];
       let contactId: string | null = null;
       if (contactGhlId) {
         const contact = await prisma.clientGhlContact.upsert({
@@ -229,6 +305,7 @@ export async function syncClientGhl(clientId: string): Promise<ClientGhlSyncResu
             email: embeddedContact?.email,
             phone: embeddedContact?.phone,
             tagsJson: tagsJson(embeddedContact?.tags),
+            attributionEvidenceJson: JSON.stringify(contactAttributionEvidence),
             sourceCreatedAt: parseDate(embeddedContact?.dateAdded ?? embeddedContact?.createdAt),
             sourceUpdatedAt: parseDate(embeddedContact?.dateUpdated ?? embeddedContact?.updatedAt),
           },
@@ -238,6 +315,7 @@ export async function syncClientGhl(clientId: string): Promise<ClientGhlSyncResu
             email: embeddedContact?.email,
             phone: embeddedContact?.phone,
             tagsJson: tagsJson(embeddedContact?.tags),
+            attributionEvidenceJson: JSON.stringify(contactAttributionEvidence),
             sourceCreatedAt: parseDate(embeddedContact?.dateAdded ?? embeddedContact?.createdAt),
             sourceUpdatedAt: parseDate(embeddedContact?.dateUpdated ?? embeddedContact?.updatedAt),
           },
@@ -249,7 +327,7 @@ export async function syncClientGhl(clientId: string): Promise<ClientGhlSyncResu
 
       const pipeline = opportunity.pipelineId ? pipelineIds.get(opportunity.pipelineId) : undefined;
       const stage = pipeline?.stages.find((item) => item.id === opportunity.pipelineStageId);
-      const attributionFields = attribution(opportunity);
+      const attributionFields = attribution(opportunity, embeddedContact);
       await prisma.clientGhlOpportunity.upsert({
         where: { clientId_ghlId: { clientId, ghlId } },
         create: {

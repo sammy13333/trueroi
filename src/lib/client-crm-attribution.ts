@@ -2,6 +2,13 @@ type Campaign = { id: string; metaId: string; name: string };
 type Adset = { id: string; metaId: string; name: string; campaignId: string };
 type Ad = { id: string; metaId: string; name: string; adsetId: string };
 
+export type AttributionEvidence = {
+  scope: "opportunity" | "contact";
+  field: string;
+  source: string;
+  value: string;
+};
+
 export type AttributionOpportunity = {
   campaignMetaId: string | null;
   adsetMetaId: string | null;
@@ -9,45 +16,104 @@ export type AttributionOpportunity = {
   utmCampaign: string | null;
   utmContent: string | null;
   utmTerm: string | null;
+  attributionEvidenceJson: string;
 };
 
-export type CrmAttribution = {
+type CrmAttribution = {
   campaignId: string;
   adsetId: string | null;
   adId: string | null;
-} | null;
+};
 
-function normalized(value: string | null | undefined) {
-  const result = value?.trim().toLocaleLowerCase();
-  return result || null;
+export type CrmAttributionResolution = {
+  attribution: CrmAttribution | null;
+  method: string | null;
+  evidence: AttributionEvidence[];
+  unmatchedReason: string | null;
+};
+
+function parseEvidence(value: string): AttributionEvidence[] {
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.flatMap((item) => {
+      if (!item || typeof item !== "object") return [];
+      const record = item as Record<string, unknown>;
+      return (record.scope === "opportunity" || record.scope === "contact")
+        && typeof record.field === "string"
+        && typeof record.source === "string"
+        && typeof record.value === "string"
+        ? [{ scope: record.scope, field: record.field, source: record.source, value: record.value }]
+        : [];
+    });
+  } catch {
+    return [];
+  }
 }
 
-function uniqueMatch<T extends { metaId: string; name: string }>(items: T[], values: Array<string | null | undefined>) {
-  const candidates = new Set(values.map(normalized).filter((value): value is string => Boolean(value)));
-  const matches = items.filter((item) => candidates.has(item.metaId.toLocaleLowerCase()) || candidates.has(item.name.trim().toLocaleLowerCase()));
-  return matches.length === 1 ? matches[0] : null;
+function savedEvidence(opportunity: AttributionOpportunity): AttributionEvidence[] {
+  const raw = parseEvidence(opportunity.attributionEvidenceJson);
+  const legacy = [
+    ["campaignMetaId", opportunity.campaignMetaId],
+    ["adsetMetaId", opportunity.adsetMetaId],
+    ["adMetaId", opportunity.adMetaId],
+    ["utmCampaign", opportunity.utmCampaign],
+    ["utmContent", opportunity.utmContent],
+    ["utmTerm", opportunity.utmTerm],
+  ].flatMap(([field, value]) => typeof value === "string" && value.trim()
+    ? [{ scope: "opportunity" as const, field, source: `stored.${field}`, value: value.trim() }]
+    : []);
+  return [...raw, ...legacy].filter((item, index, items) => items.findIndex((candidate) => candidate.field === item.field && candidate.source === item.source && candidate.value === item.value) === index);
 }
 
 /**
- * Maps an opportunity only when its saved attribution evidence resolves to one
- * unambiguous Meta hierarchy. Conflicting fields deliberately remain unattributed.
+ * Maps an opportunity only from exact saved Meta IDs. Campaign/ad-set/ad names
+ * and timestamps are deliberately never used as attribution evidence.
  */
 export function resolveCrmAttribution(
   opportunity: AttributionOpportunity,
   hierarchy: { campaigns: Campaign[]; adsets: Adset[]; ads: Ad[] },
-): CrmAttribution {
-  const ad = uniqueMatch(hierarchy.ads, [opportunity.adMetaId, opportunity.utmContent, opportunity.utmTerm]);
-  const adset = uniqueMatch(hierarchy.adsets, [opportunity.adsetMetaId, opportunity.utmContent, opportunity.utmTerm]);
-  const campaign = uniqueMatch(hierarchy.campaigns, [opportunity.campaignMetaId, opportunity.utmCampaign]);
-  const campaignFromAdset = adset && hierarchy.campaigns.find((item) => item.id === adset.campaignId);
-  const adsetFromAd = ad && hierarchy.adsets.find((item) => item.id === ad.adsetId);
-  const campaignFromAd = adsetFromAd && hierarchy.campaigns.find((item) => item.id === adsetFromAd.campaignId);
-  const campaignIds = new Set([campaign?.id, campaignFromAdset?.id, campaignFromAd?.id].filter((id): id is string => Boolean(id)));
+): CrmAttributionResolution {
+  const evidence = savedEvidence(opportunity);
+  const campaignFields = new Set(["campaignMetaId", "utmCampaign", "utmContent", "utmTerm"]);
+  const adsetFields = new Set(["adsetMetaId", "utmContent", "utmTerm"]);
+  const adFields = new Set(["adMetaId", "utmContent", "utmTerm"]);
+  const candidateEvidence = evidence.filter((item) => campaignFields.has(item.field) || adsetFields.has(item.field) || adFields.has(item.field));
+  if (!candidateEvidence.length) {
+    return { attribution: null, method: null, evidence: [], unmatchedReason: "No saved Meta ID evidence. Names and timestamps are not used for attribution." };
+  }
 
-  if (campaignIds.size !== 1) return null;
-  const campaignId = [...campaignIds][0];
-  const resolvedAdset = adset ?? adsetFromAd ?? null;
-  return { campaignId, adsetId: resolvedAdset?.id ?? null, adId: ad?.id ?? null };
+  const campaignMatches = hierarchy.campaigns.filter((item) => candidateEvidence.some((evidence) => campaignFields.has(evidence.field) && evidence.value === item.metaId));
+  const adsetMatches = hierarchy.adsets.filter((item) => candidateEvidence.some((evidence) => adsetFields.has(evidence.field) && evidence.value === item.metaId));
+  const adMatches = hierarchy.ads.filter((item) => candidateEvidence.some((evidence) => adFields.has(evidence.field) && evidence.value === item.metaId));
+  const matchedEvidence = candidateEvidence.filter((item) => [...campaignMatches, ...adsetMatches, ...adMatches].some((record) => record.metaId === item.value));
+  if (!matchedEvidence.length) {
+    return { attribution: null, method: null, evidence: candidateEvidence, unmatchedReason: "Saved Meta ID evidence does not exist in the synced Meta hierarchy." };
+  }
+  if (campaignMatches.length > 1 || adsetMatches.length > 1 || adMatches.length > 1) {
+    return { attribution: null, method: null, evidence: matchedEvidence, unmatchedReason: "Saved Meta ID evidence identifies more than one record at the same hierarchy level." };
+  }
+
+  const campaign = campaignMatches[0];
+  const adset = adsetMatches[0];
+  const ad = adMatches[0];
+  const adsetFromAd = ad ? hierarchy.adsets.find((item) => item.id === ad.adsetId) : undefined;
+  const campaignFromAdset = (adset ?? adsetFromAd) ? hierarchy.campaigns.find((item) => item.id === (adset ?? adsetFromAd)!.campaignId) : undefined;
+  const campaignIds = new Set([campaign?.id, campaignFromAdset?.id].filter((id): id is string => Boolean(id)));
+  if (campaignIds.size !== 1) {
+    return { attribution: null, method: null, evidence: matchedEvidence, unmatchedReason: "Saved campaign, ad-set, or ad IDs conflict across Meta hierarchy levels." };
+  }
+  if (adset && ad && adset.id !== adsetFromAd?.id) {
+    return { attribution: null, method: null, evidence: matchedEvidence, unmatchedReason: "Saved ad-set and ad IDs are not in the same Meta hierarchy." };
+  }
+
+  const fields = [...new Set(matchedEvidence.map((item) => item.source))];
+  return {
+    attribution: { campaignId: [...campaignIds][0], adsetId: adset?.id ?? adsetFromAd?.id ?? null, adId: ad?.id ?? null },
+    method: `Exact Meta ID match (${fields.join(", ")})`,
+    evidence: matchedEvidence,
+    unmatchedReason: null,
+  };
 }
 
 function parseTags(value: string) {

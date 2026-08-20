@@ -431,15 +431,16 @@ async function loadCrmMetrics(clientId: string, level: ReportLevel, range: DateR
       where: { clientId, sourceCreatedAt: { gte: range.gte, lt: range.lt } },
       select: {
         campaignMetaId: true, adsetMetaId: true, adMetaId: true, utmCampaign: true, utmContent: true, utmTerm: true,
+        attributionEvidenceJson: true,
         pipelineStageName: true, tagsJson: true, contact: { select: { tagsJson: true } },
       },
     }),
   ]);
   const counts = new Map<string, CrmMetrics>();
   for (const opportunity of opportunities) {
-    const attribution = resolveCrmAttribution(opportunity as AttributionOpportunity, { campaigns, adsets, ads });
-    if (!attribution) continue;
-    const id = level === "CAMPAIGN" ? attribution.campaignId : level === "ADSET" ? attribution.adsetId : attribution.adId;
+    const resolution = resolveCrmAttribution(opportunity as AttributionOpportunity, { campaigns, adsets, ads });
+    if (!resolution.attribution) continue;
+    const id = level === "CAMPAIGN" ? resolution.attribution.campaignId : level === "ADSET" ? resolution.attribution.adsetId : resolution.attribution.adId;
     if (!id) continue;
     const current = counts.get(id) ?? { leads: 0, booked: 0 };
     current.leads += 1;
