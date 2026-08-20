@@ -14,7 +14,8 @@ export function ClientSyncAllButton({ clientCount }: { clientCount: number }) {
     const response = await fetch("/api/clients/sync-all", { method: "POST" });
     const result = await response.json();
     setRunning(false);
-    setMessage(response.ok ? `${result.message}${result.skipped?.length ? ` ${result.skipped.length} skipped.` : ""}` : "Unable to sync the client accounts.");
+    const providerFailures = result.results?.filter((item: { status: string }) => item.status === "FAILED").map((item: { clientName: string; providers: { meta: { error?: string } } }) => `${item.clientName}: ${item.providers.meta.error}`).join(" ") ?? "";
+    setMessage(response.ok ? `${result.message}${result.skipped?.length ? ` ${result.skipped.length} skipped.` : ""}${providerFailures ? ` ${providerFailures}` : ""}` : "Unable to sync the client accounts.");
     router.refresh();
   }
 
