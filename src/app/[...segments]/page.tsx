@@ -5,6 +5,8 @@ import { ClientSyncAllButton } from "@/components/client-sync-all-button";
 import { ClientMetaSyncButton } from "@/components/client-meta-sync-button";
 import { FetchPipelinesButton } from "@/components/fetch-pipelines-button";
 import { ClientMetaReport } from "@/components/client-meta-report";
+import { ClientGhlLeadTracking } from "@/components/client-ghl-lead-tracking";
+import { ClientGhlSyncButton } from "@/components/client-ghl-sync-button";
 import { prisma } from "@/lib/prisma";
 
 const clientTitles: Record<string, [string, string]> = {
@@ -37,6 +39,9 @@ export default async function ClientRoutePage({
   const filters = await searchParams;
   if (section === "campaigns" || section === "adsets" || section === "ads") {
     return <ClientMetaReport level={section === "campaigns" ? "CAMPAIGN" : section === "adsets" ? "ADSET" : "AD"} requestedClientId={filters.clientId} searchParams={filters} />;
+  }
+  if (section === "leads") {
+    return <AppShell><PageHeader eyebrow="Client ROI" title="Client lead tracking" description="GoHighLevel CRM opportunities by client, pipeline, and stage. Meta delivery actions are excluded." /><ClientGhlLeadTracking requestedClientId={filters.clientId} /></AppShell>;
   }
   const [title, description] = clientTitles[section] ?? [
     "Client ROI",
@@ -80,6 +85,7 @@ export default async function ClientRoutePage({
               <div className="rounded-md border bg-[#090909] p-3"><p className="text-[11px] uppercase tracking-wide text-zinc-600">GoHighLevel</p><p className="mt-2 text-sm text-zinc-300">{client.ghlLocationId || "No location"}</p><p className={`mt-1 text-xs ${client.ghlPrivateTokenEnc ? "text-emerald-400" : "text-amber-300"}`}>{client.ghlPrivateTokenEnc ? "Private token configured" : "Token missing"}</p></div>
             </div>
             <div className="mt-5 border-t pt-5"><ClientMetaSyncButton clientId={client.id} /></div>
+            <div className="mt-5 border-t pt-5"><ClientGhlSyncButton clientId={client.id} /></div>
             {(() => {
               const lastSync = client.syncLogs[0];
               const latestCoverage = client.dailyMetaMetrics[0]?.date ?? lastSync?.latestMetricDate;

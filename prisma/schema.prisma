@@ -86,6 +86,8 @@ model Client {
   owner                User?                   @relation(fields: [ownerId], references: [id], onDelete: SetNull)
   syncLogs             ClientSyncLog[]
   pipelines            ClientPipeline[]
+  ghlContacts          ClientGhlContact[]
+  ghlOpportunities     ClientGhlOpportunity[]
   metaCampaigns        ClientMetaCampaign[]
   metaAdsets           ClientMetaAdset[]
   metaAds              ClientMetaAd[]
@@ -95,16 +97,62 @@ model Client {
 }
 
 model ClientPipeline {
-  id         String   @id @default(cuid())
-  clientId   String
-  client     Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  ghlId      String
-  name       String
-  stagesJson String   @default("[]")
-  selected   Boolean  @default(false)
-  updatedAt  DateTime @updatedAt
+  id            String                 @id @default(cuid())
+  clientId      String
+  client        Client                 @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  ghlId         String
+  name          String
+  stagesJson    String                 @default("[]")
+  selected      Boolean                @default(false)
+  opportunities ClientGhlOpportunity[]
+  updatedAt     DateTime               @updatedAt
 
   @@unique([clientId, ghlId])
+}
+
+model ClientGhlContact {
+  id              String                 @id @default(cuid())
+  clientId        String
+  client          Client                 @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  ghlId           String
+  firstName       String?
+  lastName        String?
+  email           String?
+  phone           String?
+  sourceCreatedAt DateTime?
+  sourceUpdatedAt DateTime?
+  opportunities   ClientGhlOpportunity[]
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+
+  @@unique([clientId, ghlId])
+  @@index([clientId])
+}
+
+model ClientGhlOpportunity {
+  id                 String            @id @default(cuid())
+  clientId           String
+  client             Client            @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  ghlId              String
+  contactId          String?
+  contact            ClientGhlContact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  pipelineId         String?
+  pipeline           ClientPipeline?   @relation(fields: [pipelineId], references: [id], onDelete: SetNull)
+  pipelineStageGhlId String?
+  pipelineStageName  String?
+  name               String?
+  status             String?
+  monetaryValueCents Int?
+  sourceCreatedAt    DateTime?
+  sourceUpdatedAt    DateTime?
+  lastStatusChangeAt DateTime?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  @@unique([clientId, ghlId])
+  @@index([clientId, pipelineId])
+  @@index([clientId, contactId])
+  @@index([clientId, status])
 }
 
 model User {
@@ -155,20 +203,20 @@ model ClientMetaCampaign {
 }
 
 model ClientMetaAdset {
-  id         String                  @id @default(cuid())
-  clientId   String
-  client     Client                  @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  metaId     String
-  campaignId String
-  campaign   ClientMetaCampaign      @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-  name       String
-  status     String?
-  startsAt   DateTime?
+  id            String                  @id @default(cuid())
+  clientId      String
+  client        Client                  @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  metaId        String
+  campaignId    String
+  campaign      ClientMetaCampaign      @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  name          String
+  status        String?
+  startsAt      DateTime?
   metaCreatedAt DateTime?
-  ads        ClientMetaAd[]
-  metrics    ClientDailyMetaMetric[]
-  createdAt  DateTime                @default(now())
-  updatedAt  DateTime                @updatedAt
+  ads           ClientMetaAd[]
+  metrics       ClientDailyMetaMetric[]
+  createdAt     DateTime                @default(now())
+  updatedAt     DateTime                @updatedAt
 
   @@unique([clientId, metaId])
   @@index([clientId])
@@ -176,18 +224,18 @@ model ClientMetaAdset {
 }
 
 model ClientMetaAd {
-  id        String                  @id @default(cuid())
-  clientId  String
-  client    Client                  @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  metaId    String
-  adsetId   String
-  adset     ClientMetaAdset         @relation(fields: [adsetId], references: [id], onDelete: Cascade)
-  name      String
+  id            String                  @id @default(cuid())
+  clientId      String
+  client        Client                  @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  metaId        String
+  adsetId       String
+  adset         ClientMetaAdset         @relation(fields: [adsetId], references: [id], onDelete: Cascade)
+  name          String
+  status        String?
   metaCreatedAt DateTime?
-  status    String?
-  metrics   ClientDailyMetaMetric[]
-  createdAt DateTime                @default(now())
-  updatedAt DateTime                @updatedAt
+  metrics       ClientDailyMetaMetric[]
+  createdAt     DateTime                @default(now())
+  updatedAt     DateTime                @updatedAt
 
   @@unique([clientId, metaId])
   @@index([clientId])
