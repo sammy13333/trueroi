@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { AppShell, PageHeader } from "@/components/app-shell";
+import { ClientSelector, selectedClientId } from "@/components/client-selector";
 import { ClientMetaSyncButton } from "@/components/client-meta-sync-button";
 import { prisma } from "@/lib/prisma";
 
@@ -54,10 +55,27 @@ type ReportSearchParams = {
   clientId?: string | string[];
   campaignId?: string | string[];
   adsetId?: string | string[];
+  sort?: string | string[];
+  direction?: string | string[];
   preset?: string | string[];
   startDate?: string | string[];
   endDate?: string | string[];
 };
+
+type SortKey = "spend" | "impressions" | "reach" | "clicks" | "linkClicks" | "ctr" | "linkCtr" | "cpc" | "costPerLinkClick" | "status";
+
+const sortableColumns: Array<{ key: SortKey; label: string }> = [
+  { key: "status", label: "Status" },
+  { key: "spend", label: "Spend" },
+  { key: "impressions", label: "Impressions" },
+  { key: "reach", label: "Reach" },
+  { key: "clicks", label: "Clicks" },
+  { key: "linkClicks", label: "Link clicks" },
+  { key: "ctr", label: "CTR" },
+  { key: "linkCtr", label: "Link CTR" },
+  { key: "cpc", label: "CPC" },
+  { key: "costPerLinkClick", label: "Cost per link click" },
+];
 
 function first(value: string | string[] | undefined) {
   return typeof value === "string" ? value : undefined;
@@ -122,11 +140,25 @@ function optionalNumber(value: number | null) {
 }
 
 function ctr(metrics: Metric) {
-  return metrics.impressions > 0 ? `${((metrics.clicks / metrics.impressions) * 100).toFixed(2)}%` : "—";
+  const value = metricCtr(metrics);
+  return value === null ? "—" : `${value.toFixed(2)}%`;
 }
 
-function costPerMetaLead(metrics: Metric) {
-  return metrics.leads > 0 ? currency(metrics.spendCents / metrics.leads) : "—";
+function linkCtr(metrics: Metric) {
+  const value = metrics.linkClicks === null || metrics.impressions <= 0 ? null : (metrics.linkClicks / metrics.impressions) * 100;
+  return value === null ? "—" : `${value.toFixed(2)}%`;
+}
+
+function cpc(metrics: Metric) {
+  return metrics.clicks > 0 ? currency(metrics.spendCents / metrics.clicks) : "—";
+}
+
+function costPerLinkClick(metrics: Metric) {
+  return metrics.linkClicks !== null && metrics.linkClicks > 0 ? currency(metrics.spendCents / metrics.linkClicks) : "—";
+}
+
+function metricCtr(metrics: Metric) {
+  return metrics.impressions > 0 ? (metrics.clicks / metrics.impressions) * 100 : null;
 }
 
 function date(value: Date | null) {
@@ -145,11 +177,10 @@ export async function ClientMetaReport({
   const config = reportConfig[level];
   const range = resolveDateRange(searchParams);
   const clients = await prisma.client.findMany({
-    orderBy: { updatedAt: "desc" },
+    orderBy: { createdAt: "desc" },
     select: { id: true, name: true },
   });
-  const requestedId = typeof requestedClientId === "string" ? requestedClientId : undefined;
-  const clientId = clients.some((client) => client.id === requestedId) ? requestedId! : clients[0]?.id;
+  const clientId = selectedClientId(clients, requestedClientId);
 
   if (!clientId) {
     return (
@@ -172,6 +203,10 @@ export async function ClientMetaReport({
     loadRows(clientId, level, range, { campaignId: first(searchParams.campaignId), adsetId: first(searchParams.adsetId) }),
   ]);
   const rowTotals = rows.map((row) => sumMetrics(row.metrics));
+  const sort = resolveSort(searchParams);
+  const sortedRows = rows
+    .map((row, index) => ({ row, metrics: rowTotals[index] }))
+    .sort((left, right) => compareRows(left.row, left.metrics, right.row, right.metrics, sort));
   const totals = rowTotals.reduce(
     (total, row) => ({
       spendCents: total.spendCents + row.spendCents,
@@ -195,15 +230,7 @@ export async function ClientMetaReport({
       />
       <section className="flex flex-wrap items-center gap-2 border-b border-[#272722] bg-[#080808] px-5 py-3 sm:px-8">
         <span className="mr-1 text-xs text-zinc-600">Client:</span>
-        {clients.map((item) => (
-          <Link
-            key={item.id}
-            href={reportHref(path, { clientId: item.id, campaignId: level === "ADSET" ? first(searchParams.campaignId) : undefined, adsetId: level === "AD" ? first(searchParams.adsetId) : undefined, preset: range.preset, startDate: range.preset === "custom" ? range.start : undefined, endDate: range.preset === "custom" ? range.end : undefined })}
-            className={`rounded-md border px-3 py-1.5 text-xs ${item.id === client.id ? "border-[#27b7df]/50 bg-[#27b7df]/10 text-[#71d8ef]" : "bg-[#0d161e] text-zinc-400"}`}
-          >
-            {item.name}
-          </Link>
-        ))}
+        <ClientSelector clients={clients} clientId={client.id} path={path} searchParams={searchParams} />
         <Link href={`/clients/${client.id}`} className="ml-auto text-xs text-zinc-500 hover:text-zinc-200">Client workspace</Link>
       </section>
       <DateFilters clientId={client.id} path={path} range={range} parentId={level === "ADSET" ? first(searchParams.campaignId) : level === "AD" ? first(searchParams.adsetId) : undefined} parentKey={level === "ADSET" ? "campaignId" : level === "AD" ? "adsetId" : undefined} />
@@ -227,15 +254,7 @@ export async function ClientMetaReport({
                   <tr>
                     <th className="min-w-56 px-4 py-3 font-medium">{config.singular}</th>
                     <th className="min-w-40 px-3 py-3 font-medium">Parent</th>
-                    <th className="px-3 py-3 font-medium">Status</th>
-                    <th className="numeric px-3 py-3 font-medium">Spend</th>
-                    <th className="numeric px-3 py-3 font-medium">Impressions</th>
-                    <th className="numeric px-3 py-3 font-medium">Reach</th>
-                    <th className="numeric px-3 py-3 font-medium">Clicks</th>
-                    <th className="numeric px-3 py-3 font-medium">Link clicks</th>
-                    <th className="numeric px-3 py-3 font-medium">CTR</th>
-                    <th className="numeric px-4 py-3 font-medium">Meta lead forms (delivery)</th>
-                    <th className="numeric px-4 py-3 font-medium">Cost per Meta Lead</th>
+                    {sortableColumns.map((column) => <SortableHeader key={column.key} column={column} path={path} clientId={client.id} range={range} parentId={level === "ADSET" ? first(searchParams.campaignId) : level === "AD" ? first(searchParams.adsetId) : undefined} parentKey={level === "ADSET" ? "campaignId" : level === "AD" ? "adsetId" : undefined} sort={sort} />)}
                   </tr>
                 </thead>
                 <tbody>
@@ -243,12 +262,12 @@ export async function ClientMetaReport({
                     <td className="px-4 py-3">Total</td><td> </td><td> </td>
                     <MetricCells metrics={totals} />
                   </tr>
-                  {rows.map((row, index) => (
+                  {sortedRows.map(({ row, metrics }) => (
                     <tr key={row.id} className="border-b border-[#272722] text-zinc-400 last:border-b-0">
                       <td className="px-4 py-3"><RowName row={row} level={level} clientId={client.id} range={range} />{row.detail && <p className="mt-1 text-[11px] text-zinc-600">{row.detail}</p>}</td>
                       <td className="px-3 py-3 text-zinc-500">{row.parent ?? "—"}</td>
                       <td className="px-3 py-3"><Status status={row.status} /></td>
-                      <MetricCells metrics={rowTotals[index]} />
+                      <MetricCells metrics={metrics} />
                     </tr>
                   ))}
                 </tbody>
@@ -262,7 +281,45 @@ export async function ClientMetaReport({
 }
 
 function MetricCells({ metrics }: { metrics: Metric }) {
-  return <><td className="numeric px-3 py-3">{currency(metrics.spendCents)}</td><td className="numeric px-3 py-3">{number(metrics.impressions)}</td><td className="numeric px-3 py-3">{number(metrics.reach)}</td><td className="numeric px-3 py-3">{number(metrics.clicks)}</td><td className="numeric px-3 py-3">{optionalNumber(metrics.linkClicks)}</td><td className="numeric px-3 py-3">{ctr(metrics)}</td><td className="numeric px-4 py-3">{number(metrics.leads)}</td><td className="numeric px-4 py-3">{costPerMetaLead(metrics)}</td></>;
+  return <><td className="numeric px-3 py-3">{currency(metrics.spendCents)}</td><td className="numeric px-3 py-3">{number(metrics.impressions)}</td><td className="numeric px-3 py-3">{number(metrics.reach)}</td><td className="numeric px-3 py-3">{number(metrics.clicks)}</td><td className="numeric px-3 py-3">{optionalNumber(metrics.linkClicks)}</td><td className="numeric px-3 py-3">{ctr(metrics)}</td><td className="numeric px-3 py-3">{linkCtr(metrics)}</td><td className="numeric px-3 py-3">{cpc(metrics)}</td><td className="numeric px-4 py-3">{costPerLinkClick(metrics)}</td></>;
+}
+
+function resolveSort(searchParams: ReportSearchParams): { key: SortKey; direction: "asc" | "desc" } {
+  const requestedKey = first(searchParams.sort);
+  const key = sortableColumns.some((column) => column.key === requestedKey) ? requestedKey as SortKey : "spend";
+  return { key, direction: first(searchParams.direction) === "asc" ? "asc" : "desc" };
+}
+
+function sortValue(row: ReportRow, metrics: Metric, key: SortKey): number | string | null {
+  switch (key) {
+    case "status": return row.status?.trim().toLocaleLowerCase() || null;
+    case "spend": return metrics.spendCents;
+    case "impressions": return metrics.impressions;
+    case "reach": return metrics.reach;
+    case "clicks": return metrics.clicks;
+    case "linkClicks": return metrics.linkClicks;
+    case "ctr": return metricCtr(metrics);
+    case "linkCtr": return metrics.linkClicks === null || metrics.impressions <= 0 ? null : (metrics.linkClicks / metrics.impressions) * 100;
+    case "cpc": return metrics.clicks > 0 ? metrics.spendCents / metrics.clicks : null;
+    case "costPerLinkClick": return metrics.linkClicks !== null && metrics.linkClicks > 0 ? metrics.spendCents / metrics.linkClicks : null;
+  }
+}
+
+function compareRows(leftRow: ReportRow, leftMetrics: Metric, rightRow: ReportRow, rightMetrics: Metric, sort: { key: SortKey; direction: "asc" | "desc" }) {
+  const left = sortValue(leftRow, leftMetrics, sort.key);
+  const right = sortValue(rightRow, rightMetrics, sort.key);
+  if (left === null && right === null) return leftRow.name.localeCompare(rightRow.name);
+  if (left === null) return 1;
+  if (right === null) return -1;
+  const comparison = typeof left === "string" && typeof right === "string" ? left.localeCompare(right) : (left as number) - (right as number);
+  return (sort.direction === "asc" ? comparison : -comparison) || leftRow.name.localeCompare(rightRow.name);
+}
+
+function SortableHeader({ column, path, clientId, range, parentId, parentKey, sort }: { column: { key: SortKey; label: string }; path: string; clientId: string; range: DateRange; parentId?: string; parentKey?: "campaignId" | "adsetId"; sort: { key: SortKey; direction: "asc" | "desc" } }) {
+  const active = sort.key === column.key;
+  const direction = active && sort.direction === "desc" ? "asc" : "desc";
+  const href = reportHref(path, { clientId, ...(parentId && parentKey ? { [parentKey]: parentId } : {}), preset: range.preset, startDate: range.preset === "custom" ? range.start : undefined, endDate: range.preset === "custom" ? range.end : undefined, sort: column.key, direction });
+  return <th className="numeric px-3 py-3 font-medium"><Link href={href} className="inline-flex items-center gap-1 hover:text-zinc-300">{column.label}<span aria-hidden className={active ? "text-[#71d8ef]" : "text-zinc-700"}>{active ? (sort.direction === "asc" ? "↑" : "↓") : "↕"}</span><span className="sr-only">{active ? `sorted ${sort.direction === "asc" ? "ascending" : "descending"}` : "sort"}</span></Link></th>;
 }
 
 function CoverageCard({ label, value, detail }: { label: string; value: string; detail: string }) {

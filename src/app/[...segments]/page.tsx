@@ -6,6 +6,7 @@ import { ClientMetaSyncButton } from "@/components/client-meta-sync-button";
 import { FetchPipelinesButton } from "@/components/fetch-pipelines-button";
 import { ClientMetaReport } from "@/components/client-meta-report";
 import { ClientGhlLeadTracking } from "@/components/client-ghl-lead-tracking";
+import { ClientReportPlaceholder } from "@/components/client-report-placeholder";
 import { ClientGhlSyncButton } from "@/components/client-ghl-sync-button";
 import { prisma } from "@/lib/prisma";
 
@@ -41,7 +42,11 @@ export default async function ClientRoutePage({
     return <ClientMetaReport level={section === "campaigns" ? "CAMPAIGN" : section === "adsets" ? "ADSET" : "AD"} requestedClientId={filters.clientId} searchParams={filters} />;
   }
   if (section === "leads") {
-    return <AppShell><PageHeader eyebrow="Client ROI" title="Client lead tracking" description="GoHighLevel CRM opportunities by client, pipeline, and stage. Meta delivery actions are excluded." /><ClientGhlLeadTracking requestedClientId={filters.clientId} /></AppShell>;
+    return <AppShell><PageHeader eyebrow="Client ROI" title="Client lead tracking" description="GoHighLevel CRM opportunities by client, pipeline, and stage. Meta delivery actions are excluded." /><ClientGhlLeadTracking requestedClientId={filters.clientId} searchParams={filters} /></AppShell>;
+  }
+  if (section === "attribution" || section === "insights") {
+    const [title, description] = clientTitles[section];
+    return <AppShell><PageHeader eyebrow="Client ROI" title={title} description={description} /><ClientReportPlaceholder section={section} title={title} description="This report remains scoped to the selected client. Sync delivery and CRM data to populate its findings." searchParams={filters} /></AppShell>;
   }
   const [title, description] = clientTitles[section] ?? [
     "Client ROI",
