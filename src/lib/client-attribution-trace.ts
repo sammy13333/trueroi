@@ -8,7 +8,6 @@ const GHL_VERSION = "2021-07-28";
 const attributionKey = /(utm|campaign|content|adset|(?:^|_)ad(?:_|$)|source|attribution|facebook|fbclid|landing|referrer)/i;
 const piiKey = /(email|phone|first.?name|last.?name|full.?name|address|birth|company)/i;
 
-type TraceField = "attributionSource" | "utmSource" | "utmMedium" | "utmCampaign" | "utmContent" | "utmTerm" | "campaignMetaId" | "adsetMetaId" | "adMetaId";
 type GhlCustomField = { id?: unknown; name?: unknown; fieldKey?: unknown; key?: unknown };
 
 function text(value: unknown) {
@@ -31,18 +30,6 @@ function safeValue(value: unknown): string | null {
 
 function normalized(value: string | null) {
   return value?.normalize("NFKC").trim().toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").replace(/\s+/g, " ") || null;
-}
-
-function canonicalField(name: string): TraceField | null {
-  const key = name.trim().toLocaleLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
-  const fields: Record<string, TraceField> = {
-    attribution_source: "attributionSource", source: "attributionSource",
-    utm_source: "utmSource", utm_medium: "utmMedium", utm_campaign: "utmCampaign", utm_content: "utmContent", utm_term: "utmTerm",
-    campaign_id: "campaignMetaId", meta_campaign_id: "campaignMetaId", facebook_campaign_id: "campaignMetaId", fb_campaign_id: "campaignMetaId",
-    adset_id: "adsetMetaId", ad_set_id: "adsetMetaId", meta_adset_id: "adsetMetaId", facebook_adset_id: "adsetMetaId", fb_adset_id: "adsetMetaId",
-    ad_id: "adMetaId", meta_ad_id: "adMetaId", facebook_ad_id: "adMetaId", fb_ad_id: "adMetaId",
-  };
-  return fields[key] ?? null;
 }
 
 function selectedRaw(value: unknown, path = "contact"): Array<{ path: string; value: string }> {
@@ -113,7 +100,7 @@ function reportRange() {
   return { gte, lt, start: gte.toISOString().slice(0, 10), end: today.toISOString().slice(0, 10) };
 }
 
-function safeStored(record: Record<string, unknown> | null) {
+function safeStored(record: Record<string, unknown> | null): Record<string, unknown> | null {
   if (!record) return null;
   const hidden = new Set(["attributionEvidenceJson"]);
   return Object.fromEntries(Object.entries(record).flatMap(([key, value]) => {
