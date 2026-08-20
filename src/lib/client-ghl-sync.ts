@@ -306,7 +306,7 @@ export async function rebuildCanonicalCrmLeads(clientId: string) {
     prisma.clientGhlContact.findMany({
       where: { clientId },
       select: {
-        id: true, ghlId: true, sourceCreatedAt: true, attributionSource: true, utmSource: true, utmMedium: true, utmCampaign: true, utmContent: true, utmTerm: true,
+        id: true, ghlId: true, sourceCreatedAt: true, sourceUpdatedAt: true, attributionSource: true, utmSource: true, utmMedium: true, utmCampaign: true, utmContent: true, utmTerm: true,
         campaignMetaId: true, adsetMetaId: true, adMetaId: true, attributionEvidenceJson: true,
         opportunities: {
           orderBy: [{ sourceCreatedAt: "asc" }, { createdAt: "asc" }],
