@@ -53,7 +53,14 @@ function parseEvidence(value: string): AttributionEvidence[] {
 }
 
 function normalized(value: string | null | undefined) {
-  const result = value?.normalize("NFKC").trim().replace(/\s+/g, " ").toLocaleLowerCase();
+  const result = value
+    ?.normalize("NFKC")
+    .trim()
+    .toLocaleLowerCase()
+    // Meta names often use "+", punctuation, and spacing as visual separators
+    // while landing-page UTM values preserve the same words without them.
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .replace(/\s+/g, " ");
   return result || null;
 }
 
