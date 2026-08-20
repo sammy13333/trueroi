@@ -17,6 +17,7 @@ type GhlContact = {
   dateUpdated?: string;
   createdAt?: string;
   updatedAt?: string;
+  tags?: unknown;
 };
 type GhlOpportunity = {
   id?: string;
@@ -37,6 +38,10 @@ type GhlOpportunity = {
   utmCampaign?: string;
   utmContent?: string;
   utmTerm?: string;
+  campaignId?: string;
+  adsetId?: string;
+  adId?: string;
+  tags?: unknown;
   attributions?: {
     source?: string;
     utmSource?: string;
@@ -44,6 +49,9 @@ type GhlOpportunity = {
     utmCampaign?: string;
     utmContent?: string;
     utmTerm?: string;
+    campaignId?: string;
+    adsetId?: string;
+    adId?: string;
   };
 };
 type GhlOpportunityPage = {
@@ -92,7 +100,20 @@ function attribution(opportunity: GhlOpportunity) {
     utmCampaign: asString(opportunity.utmCampaign) ?? asString(values?.utmCampaign),
     utmContent: asString(opportunity.utmContent) ?? asString(values?.utmContent),
     utmTerm: asString(opportunity.utmTerm) ?? asString(values?.utmTerm),
+    campaignMetaId: asString(opportunity.campaignId) ?? asString(values?.campaignId),
+    adsetMetaId: asString(opportunity.adsetId) ?? asString(values?.adsetId),
+    adMetaId: asString(opportunity.adId) ?? asString(values?.adId),
   };
+}
+
+function tagsJson(value: unknown) {
+  if (!Array.isArray(value)) return "[]";
+  const tags = value.flatMap((tag) => {
+    if (typeof tag === "string") return tag.trim() ? [tag.trim()] : [];
+    if (tag && typeof tag === "object" && "name" in tag && typeof tag.name === "string" && tag.name.trim()) return [tag.name.trim()];
+    return [];
+  });
+  return JSON.stringify([...new Set(tags)]);
 }
 
 function ghlErrorMessage(payload: unknown, fallback: string): string {
@@ -207,6 +228,7 @@ export async function syncClientGhl(clientId: string): Promise<ClientGhlSyncResu
             lastName: embeddedContact?.lastName,
             email: embeddedContact?.email,
             phone: embeddedContact?.phone,
+            tagsJson: tagsJson(embeddedContact?.tags),
             sourceCreatedAt: parseDate(embeddedContact?.dateAdded ?? embeddedContact?.createdAt),
             sourceUpdatedAt: parseDate(embeddedContact?.dateUpdated ?? embeddedContact?.updatedAt),
           },
@@ -215,6 +237,7 @@ export async function syncClientGhl(clientId: string): Promise<ClientGhlSyncResu
             lastName: embeddedContact?.lastName,
             email: embeddedContact?.email,
             phone: embeddedContact?.phone,
+            tagsJson: tagsJson(embeddedContact?.tags),
             sourceCreatedAt: parseDate(embeddedContact?.dateAdded ?? embeddedContact?.createdAt),
             sourceUpdatedAt: parseDate(embeddedContact?.dateUpdated ?? embeddedContact?.updatedAt),
           },
@@ -240,6 +263,7 @@ export async function syncClientGhl(clientId: string): Promise<ClientGhlSyncResu
           status: opportunity.status,
           monetaryValueCents: cents(opportunity.monetaryValue),
           ...attributionFields,
+          tagsJson: tagsJson(opportunity.tags),
           sourceCreatedAt: parseDate(opportunity.createdAt),
           sourceUpdatedAt: parseDate(opportunity.updatedAt),
           lastStatusChangeAt: parseDate(opportunity.lastStatusChangeAt),
@@ -253,6 +277,7 @@ export async function syncClientGhl(clientId: string): Promise<ClientGhlSyncResu
           status: opportunity.status,
           monetaryValueCents: cents(opportunity.monetaryValue),
           ...attributionFields,
+          tagsJson: tagsJson(opportunity.tags),
           sourceCreatedAt: parseDate(opportunity.createdAt),
           sourceUpdatedAt: parseDate(opportunity.updatedAt),
           lastStatusChangeAt: parseDate(opportunity.lastStatusChangeAt),

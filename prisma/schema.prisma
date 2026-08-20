@@ -119,6 +119,7 @@ model ClientGhlContact {
   lastName        String?
   email           String?
   phone           String?
+  tagsJson        String                 @default("[]")
   sourceCreatedAt DateTime?
   sourceUpdatedAt DateTime?
   opportunities   ClientGhlOpportunity[]
@@ -149,6 +150,10 @@ model ClientGhlOpportunity {
   utmCampaign        String?
   utmContent         String?
   utmTerm            String?
+  campaignMetaId     String?
+  adsetMetaId        String?
+  adMetaId           String?
+  tagsJson           String            @default("[]")
   sourceCreatedAt    DateTime?
   sourceUpdatedAt    DateTime?
   lastStatusChangeAt DateTime?
@@ -159,6 +164,9 @@ model ClientGhlOpportunity {
   @@index([clientId, pipelineId])
   @@index([clientId, contactId])
   @@index([clientId, status])
+  @@index([clientId, campaignMetaId])
+  @@index([clientId, adsetMetaId])
+  @@index([clientId, adMetaId])
 }
 
 model User {
