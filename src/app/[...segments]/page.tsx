@@ -2,6 +2,7 @@ import Link from "next/link";
 import { AppShell, FilterBar, PageHeader } from "@/components/app-shell";
 import { ClientConnectionForm } from "@/components/client-connection-form";
 import { ClientSyncAllButton } from "@/components/client-sync-all-button";
+import { ClientMetaSyncButton } from "@/components/client-meta-sync-button";
 import { FetchPipelinesButton } from "@/components/fetch-pipelines-button";
 import { prisma } from "@/lib/prisma";
 
@@ -31,7 +32,13 @@ export default async function ClientRoutePage({
   const isClientDetail = section === "clients" && detail && detail !== "new";
   const client = isClientDetail ? await prisma.client.findUnique({
     where: { id: detail },
-    select: { id: true, name: true, industry: true, metaAdAccountId: true, ghlLocationId: true, metaAccessTokenEnc: true, ghlPrivateTokenEnc: true, lifecycle: true, pipelines: { select: { id: true, name: true } } },
+    select: {
+      id: true, name: true, industry: true, metaAdAccountId: true, ghlLocationId: true, metaAccessTokenEnc: true, ghlPrivateTokenEnc: true, lifecycle: true,
+      pipelines: { select: { id: true, name: true } },
+      syncLogs: { orderBy: { createdAt: "desc" }, take: 1, select: { status: true, message: true, latestMetricDate: true, completedAt: true, createdAt: true } },
+      dailyMetaMetrics: { orderBy: { date: "desc" }, take: 1, select: { date: true } },
+      _count: { select: { dailyMetaMetrics: true } },
+    },
   }) : null;
   const clients = section === "clients" && !detail ? await prisma.client.findMany({
     orderBy: { updatedAt: "desc" },
@@ -58,12 +65,22 @@ export default async function ClientRoutePage({
               <div className="rounded-md border bg-[#090909] p-3"><p className="text-[11px] uppercase tracking-wide text-zinc-600">Meta</p><p className="mt-2 text-sm text-zinc-300">{client.metaAdAccountId || "No ad account"}</p><p className={`mt-1 text-xs ${client.metaAccessTokenEnc ? "text-emerald-400" : "text-amber-300"}`}>{client.metaAccessTokenEnc ? "Access token configured" : "Token missing"}</p></div>
               <div className="rounded-md border bg-[#090909] p-3"><p className="text-[11px] uppercase tracking-wide text-zinc-600">GoHighLevel</p><p className="mt-2 text-sm text-zinc-300">{client.ghlLocationId || "No location"}</p><p className={`mt-1 text-xs ${client.ghlPrivateTokenEnc ? "text-emerald-400" : "text-amber-300"}`}>{client.ghlPrivateTokenEnc ? "Private token configured" : "Token missing"}</p></div>
             </div>
+            <div className="mt-5 border-t pt-5"><ClientMetaSyncButton clientId={client.id} /></div>
+            {(() => {
+              const lastSync = client.syncLogs[0];
+              const latestCoverage = client.dailyMetaMetrics[0]?.date ?? lastSync?.latestMetricDate;
+              return <section className="mt-5 rounded-md border bg-[#090909] p-4">
+                <p className="text-[11px] uppercase tracking-wide text-zinc-600">Meta sync result and coverage</p>
+                {lastSync ? <><p className={`mt-2 text-sm ${lastSync.status === "COMPLETED" ? "text-emerald-400" : lastSync.status === "FAILED" ? "text-red-400" : "text-amber-300"}`}>{lastSync.status === "COMPLETED" ? "Last sync completed" : lastSync.status === "FAILED" ? "Last sync failed" : "Sync in progress"}</p><p className="mt-1 text-xs text-zinc-500">{lastSync.message ?? "No provider message recorded."}</p></> : <p className="mt-2 text-sm text-zinc-500">No Meta sync has run yet.</p>}
+                <p className="mt-3 text-xs text-zinc-500">Stored daily metric rows: {client._count.dailyMetaMetrics} · Latest coverage: {latestCoverage ? latestCoverage.toISOString().slice(0, 10) : "No daily insights stored"}</p>
+              </section>;
+            })()}
             <div className="mt-5 border-t pt-5"><FetchPipelinesButton clientId={client.id} />{client.pipelines.length > 0 && <p className="mt-3 text-xs text-emerald-400">Imported pipelines: {client.pipelines.map((pipeline) => pipeline.name).join(", ")}</p>}</div>
           </section>
         </div>
       ) : section === "clients" ? (
         <div className="m-5 max-w-5xl sm:m-8">
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3"><p className="text-xs text-zinc-600">Sync all queues every fully configured client account; incomplete accounts are skipped.</p><div className="flex items-center gap-2"><ClientSyncAllButton clientCount={clients.length} /><Link href="/clients/new" className="rounded-md bg-[#d4af37] px-3.5 py-2 text-xs font-semibold text-black">Add client</Link></div></div>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3"><p className="text-xs text-zinc-600">Sync all fetches and stores Meta data for each configured client; incomplete accounts are skipped.</p><div className="flex items-center gap-2"><ClientSyncAllButton clientCount={clients.length} /><Link href="/clients/new" className="rounded-md bg-[#d4af37] px-3.5 py-2 text-xs font-semibold text-black">Add client</Link></div></div>
           <div className="overflow-hidden rounded-lg border border-[#272722] bg-[#0c0c0b]">
             {clients.length === 0 ? <p className="p-8 text-center text-sm text-zinc-500">No clients yet. Add your first client connection.</p> : clients.map((item) => <Link key={item.id} href={`/clients/${item.id}`} className="flex items-center justify-between border-b border-[#272722] px-5 py-4 last:border-b-0 hover:bg-zinc-900/50"><div><p className="text-sm font-medium text-zinc-200">{item.name}</p><p className="mt-1 text-xs text-zinc-600">{item.industry || "Industry not set"} · {item.lifecycle}</p></div><div className="text-right text-xs"><p className={item.metaAccessTokenEnc && item.ghlPrivateTokenEnc ? "text-emerald-400" : "text-amber-300"}>{item.metaAccessTokenEnc && item.ghlPrivateTokenEnc ? "Connections configured" : "Setup incomplete"}</p><p className="mt-1 text-zinc-600">{item.metaAdAccountId || "No Meta account"}</p></div></Link>)}
           </div>

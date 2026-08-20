@@ -50,44 +50,48 @@ enum PaymentType {
 }
 
 model AgencyProfile {
-  id                 String   @id @default("default")
-  name               String   @default("My Agency")
+  id                 String    @id @default("default")
+  name               String    @default("My Agency")
   metaAdAccountId    String?
   metaAccessTokenEnc String?
   ghlLocationId      String?
   ghlApiTokenEnc     String?
-  pipelineMappings   String   @default("[]")
-  stageTagMappings   String   @default("{}")
+  pipelineMappings   String    @default("[]")
+  stageTagMappings   String    @default("{}")
   syncWindowStart    DateTime?
   syncWindowEnd      DateTime?
-  defaultDateBasis   String   @default("lead_created")
-  defaultRevSharePct Float    @default(7.5)
-  updatedAt          DateTime @updatedAt
-  createdAt          DateTime @default(now())
+  defaultDateBasis   String    @default("lead_created")
+  defaultRevSharePct Float     @default(7.5)
+  updatedAt          DateTime  @updatedAt
+  createdAt          DateTime  @default(now())
 }
 
 model Client {
-  id                 String   @id @default(cuid())
-  name               String
-  metaAdAccountId    String?  @unique
-  metaAccessTokenEnc String?
-  metaPageId         String?
-  metaLeadFormIds    String?
-  ghlLocationId      String?  @unique
-  ghlPrivateTokenEnc String?
-  ghlCalendarId      String?
-  industry           String?
-  lifecycle          String   @default("active")
-  targetDealCents    Int?
+  id                   String                  @id @default(cuid())
+  name                 String
+  metaAdAccountId      String?                 @unique
+  metaAccessTokenEnc   String?
+  metaPageId           String?
+  metaLeadFormIds      String?
+  ghlLocationId        String?                 @unique
+  ghlPrivateTokenEnc   String?
+  ghlCalendarId        String?
+  industry             String?
+  lifecycle            String                  @default("active")
+  targetDealCents      Int?
   monthlyRetainerCents Int?
-  revSharePercent    Float?
-  setupFeeCents      Int?
-  ownerId            String?
-  owner              User?    @relation(fields: [ownerId], references: [id], onDelete: SetNull)
-  syncLogs           ClientSyncLog[]
-  pipelines          ClientPipeline[]
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  revSharePercent      Float?
+  setupFeeCents        Int?
+  ownerId              String?
+  owner                User?                   @relation(fields: [ownerId], references: [id], onDelete: SetNull)
+  syncLogs             ClientSyncLog[]
+  pipelines            ClientPipeline[]
+  metaCampaigns        ClientMetaCampaign[]
+  metaAdsets           ClientMetaAdset[]
+  metaAds              ClientMetaAd[]
+  dailyMetaMetrics     ClientDailyMetaMetric[]
+  createdAt            DateTime                @default(now())
+  updatedAt            DateTime                @updatedAt
 }
 
 model ClientPipeline {
@@ -99,6 +103,7 @@ model ClientPipeline {
   stagesJson String   @default("[]")
   selected   Boolean  @default(false)
   updatedAt  DateTime @updatedAt
+
   @@unique([clientId, ghlId])
 }
 
@@ -114,107 +119,194 @@ model User {
 }
 
 model ClientSyncLog {
-  id        String   @id @default(cuid())
+  id               String    @id @default(cuid())
+  clientId         String
+  client           Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  status           String    @default("PENDING")
+  mode             String    @default("ALL")
+  message          String?
+  details          String?
+  latestMetricDate DateTime?
+  startedAt        DateTime  @default(now())
+  completedAt      DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+}
+
+model ClientMetaCampaign {
+  id              String                  @id @default(cuid())
+  clientId        String
+  client          Client                  @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  metaId          String
+  name            String
+  status          String?
+  effectiveStatus String?
+  objective       String?
+  startsAt        DateTime?
+  endsAt          DateTime?
+  adsets          ClientMetaAdset[]
+  metrics         ClientDailyMetaMetric[]
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+
+  @@unique([clientId, metaId])
+  @@index([clientId])
+}
+
+model ClientMetaAdset {
+  id         String                  @id @default(cuid())
+  clientId   String
+  client     Client                  @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  metaId     String
+  campaignId String
+  campaign   ClientMetaCampaign      @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  name       String
+  status     String?
+  ads        ClientMetaAd[]
+  metrics    ClientDailyMetaMetric[]
+  createdAt  DateTime                @default(now())
+  updatedAt  DateTime                @updatedAt
+
+  @@unique([clientId, metaId])
+  @@index([clientId])
+  @@index([campaignId])
+}
+
+model ClientMetaAd {
+  id        String                  @id @default(cuid())
   clientId  String
-  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  status    String   @default("PENDING")
-  mode      String   @default("ALL")
-  message   String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  client    Client                  @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  metaId    String
+  adsetId   String
+  adset     ClientMetaAdset         @relation(fields: [adsetId], references: [id], onDelete: Cascade)
+  name      String
+  status    String?
+  metrics   ClientDailyMetaMetric[]
+  createdAt DateTime                @default(now())
+  updatedAt DateTime                @updatedAt
+
+  @@unique([clientId, metaId])
+  @@index([clientId])
+  @@index([adsetId])
+}
+
+model ClientDailyMetaMetric {
+  id            String              @id @default(cuid())
+  clientId      String
+  client        Client              @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  date          DateTime
+  level         String
+  subjectMetaId String
+  campaignId    String?
+  campaign      ClientMetaCampaign? @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  adsetId       String?
+  adset         ClientMetaAdset?    @relation(fields: [adsetId], references: [id], onDelete: Cascade)
+  adId          String?
+  ad            ClientMetaAd?       @relation(fields: [adId], references: [id], onDelete: Cascade)
+  spendCents    Int                 @default(0)
+  impressions   Int                 @default(0)
+  reach         Int                 @default(0)
+  clicks        Int                 @default(0)
+  leads         Int                 @default(0)
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  @@unique([clientId, date, level, subjectMetaId])
+  @@index([clientId, date])
 }
 
 model AgencyMetaCampaign {
-  id             String                 @id @default(cuid())
-  metaId         String                 @unique
-  name           String
-  status         String?
+  id              String                 @id @default(cuid())
+  metaId          String                 @unique
+  name            String
+  status          String?
   effectiveStatus String?
-  objective      String?
-  startsAt       DateTime?
-  endsAt         DateTime?
-  classification CampaignClassification @default(AGENCY_ACQUISITION)
-  adsets         AgencyMetaAdset[]
-  metrics        AgencyDailyAdMetric[]
-  createdAt      DateTime               @default(now())
-  updatedAt      DateTime               @updatedAt
+  objective       String?
+  startsAt        DateTime?
+  endsAt          DateTime?
+  classification  CampaignClassification @default(AGENCY_ACQUISITION)
+  adsets          AgencyMetaAdset[]
+  metrics         AgencyDailyAdMetric[]
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
 }
 
 model AgencyMetaAdset {
-  id         String              @id @default(cuid())
-  metaId     String              @unique
+  id         String                @id @default(cuid())
+  metaId     String                @unique
   campaignId String
-  campaign   AgencyMetaCampaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  campaign   AgencyMetaCampaign    @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   name       String
   status     String?
   ads        AgencyMetaAd[]
   metrics    AgencyDailyAdMetric[]
-  createdAt  DateTime            @default(now())
-  updatedAt  DateTime            @updatedAt
+  createdAt  DateTime              @default(now())
+  updatedAt  DateTime              @updatedAt
 }
 
 model AgencyMetaAd {
-  id        String             @id @default(cuid())
-  metaId    String             @unique
+  id        String                @id @default(cuid())
+  metaId    String                @unique
   adsetId   String
-  adset     AgencyMetaAdset    @relation(fields: [adsetId], references: [id], onDelete: Cascade)
+  adset     AgencyMetaAdset       @relation(fields: [adsetId], references: [id], onDelete: Cascade)
   name      String
   status    String?
   metrics   AgencyDailyAdMetric[]
-  createdAt DateTime           @default(now())
-  updatedAt DateTime           @updatedAt
+  createdAt DateTime              @default(now())
+  updatedAt DateTime              @updatedAt
 }
 
 model AgencyDailyAdMetric {
-  id          String              @id @default(cuid())
-  date        DateTime
-  level       String
-  campaignId  String?
-  campaign    AgencyMetaCampaign? @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-  adsetId     String?
-  adset       AgencyMetaAdset?    @relation(fields: [adsetId], references: [id], onDelete: Cascade)
-  adId        String?
-  ad          AgencyMetaAd?       @relation(fields: [adId], references: [id], onDelete: Cascade)
-  spendCents  Int                 @default(0)
-  impressions Int                 @default(0)
-  reach       Int                 @default(0)
-  clicks      Int                 @default(0)
-  leadForms   Int                 @default(0)
-  webSchedules Int                @default(0)
-  webLeads    Int                 @default(0)
-  otherResults Int                @default(0)
+  id           String              @id @default(cuid())
+  date         DateTime
+  level        String
+  campaignId   String?
+  campaign     AgencyMetaCampaign? @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  adsetId      String?
+  adset        AgencyMetaAdset?    @relation(fields: [adsetId], references: [id], onDelete: Cascade)
+  adId         String?
+  ad           AgencyMetaAd?       @relation(fields: [adId], references: [id], onDelete: Cascade)
+  spendCents   Int                 @default(0)
+  impressions  Int                 @default(0)
+  reach        Int                 @default(0)
+  clicks       Int                 @default(0)
+  leadForms    Int                 @default(0)
+  webSchedules Int                 @default(0)
+  webLeads     Int                 @default(0)
+  otherResults Int                 @default(0)
+
   @@unique([date, level, campaignId, adsetId, adId])
 }
 
 model AgencyLead {
-  id              String       @id @default(cuid())
-  ghlContactId    String?      @unique
-  campaignMetaId  String?
-  adsetMetaId     String?
-  adMetaId        String?
-  utmCampaign     String?
-  utmContent      String?
-  email           String?
-  phone           String?
-  name            String?
-  outcome         LeadOutcome  @default(LEAD)
-  dealType        String?
-  attributedValueCents Int     @default(0)
-  createdAt       DateTime     @default(now())
-  outcomeAt       DateTime?
-  attributionMethod String?
-  updatedAt       DateTime     @updatedAt
+  id                   String      @id @default(cuid())
+  ghlContactId         String?     @unique
+  campaignMetaId       String?
+  adsetMetaId          String?
+  adMetaId             String?
+  utmCampaign          String?
+  utmContent           String?
+  email                String?
+  phone                String?
+  name                 String?
+  outcome              LeadOutcome @default(LEAD)
+  dealType             String?
+  attributedValueCents Int         @default(0)
+  createdAt            DateTime    @default(now())
+  outcomeAt            DateTime?
+  attributionMethod    String?
+  updatedAt            DateTime    @updatedAt
 }
 
 model AgencySyncLog {
-  id           String     @id @default(cuid())
-  provider     String
-  mode         String?
-  status       SyncStatus @default(PENDING)
-  startedAt    DateTime   @default(now())
-  completedAt  DateTime?
+  id               String     @id @default(cuid())
+  provider         String
+  mode             String?
+  status           SyncStatus @default(PENDING)
+  startedAt        DateTime   @default(now())
+  completedAt      DateTime?
   latestMetricDate DateTime?
-  details      String?
+  details          String?
 }
 
 model PaymentTransaction {
@@ -233,6 +325,7 @@ model PaymentTransaction {
   importedAt         DateTime    @default(now())
   ignored            Boolean     @default(false)
   duplicate          Boolean     @default(false)
+
   @@unique([processor, externalId])
 }
 
