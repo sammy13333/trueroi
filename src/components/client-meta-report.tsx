@@ -32,7 +32,10 @@ type Metric = {
   clicks: number;
   linkClicks: number | null;
   leads: number;
+  metaLeadCostCents: number | null;
 };
+
+type TotalMetric = Omit<Metric, "metaLeadCostCents"> & { metaLeadCostCents: number };
 
 type ReportRow = {
   id: string;
@@ -66,11 +69,13 @@ type ReportSearchParams = {
   endDate?: string | string[];
 };
 
-type SortKey = "spend" | "impressions" | "reach" | "clicks" | "linkClicks" | "ctr" | "linkCtr" | "cpc" | "costPerLinkClick" | "status";
+type SortKey = "spend" | "impressions" | "reach" | "clicks" | "linkClicks" | "metaLeads" | "metaCpl" | "ctr" | "linkCtr" | "cpc" | "costPerLinkClick" | "status";
 
 const sortableColumns: Array<{ key: SortKey; label: string }> = [
   { key: "status", label: "Status" },
   { key: "spend", label: "Spend" },
+  { key: "metaLeads", label: "Meta Leads" },
+  { key: "metaCpl", label: "Meta CPL" },
   { key: "impressions", label: "Impressions" },
   { key: "reach", label: "Reach" },
   { key: "clicks", label: "Clicks" },
@@ -117,7 +122,7 @@ function resolveDateRange(searchParams: ReportSearchParams): DateRange {
   return { preset: preset === "custom" ? "last-30" : preset, start: dateString(gte), end: dateString(today), gte, lt };
 }
 
-function sumMetrics(metrics: Metric[]) {
+function sumMetrics(metrics: Metric[]): TotalMetric {
   return metrics.reduce(
     (total, metric) => ({
       spendCents: total.spendCents + metric.spendCents,
@@ -126,8 +131,9 @@ function sumMetrics(metrics: Metric[]) {
       clicks: total.clicks + metric.clicks,
       linkClicks: total.linkClicks === null || metric.linkClicks === null ? null : total.linkClicks + metric.linkClicks,
       leads: total.leads + metric.leads,
+      metaLeadCostCents: total.metaLeadCostCents + (metric.metaLeadCostCents ?? (metric.leads > 0 ? metric.spendCents : 0)),
     }),
-    { spendCents: 0, impressions: 0, reach: 0, clicks: 0, linkClicks: 0 as number | null, leads: 0 },
+    { spendCents: 0, impressions: 0, reach: 0, clicks: 0, linkClicks: 0 as number | null, leads: 0, metaLeadCostCents: 0 },
   );
 }
 
@@ -219,8 +225,9 @@ export async function ClientMetaReport({
       clicks: total.clicks + row.clicks,
       linkClicks: total.linkClicks === null || row.linkClicks === null ? null : total.linkClicks + row.linkClicks,
       leads: total.leads + row.leads,
+      metaLeadCostCents: total.metaLeadCostCents + row.metaLeadCostCents,
     }),
-    { spendCents: 0, impressions: 0, reach: 0, clicks: 0, linkClicks: 0 as number | null, leads: 0 },
+    { spendCents: 0, impressions: 0, reach: 0, clicks: 0, linkClicks: 0 as number | null, leads: 0, metaLeadCostCents: 0 },
   );
   const crmTotals = sumCrmMetrics(rows.map((row) => row.crm));
   const path = level === "CAMPAIGN" ? "/campaigns" : level === "ADSET" ? "/adsets" : "/ads";
@@ -248,7 +255,7 @@ export async function ClientMetaReport({
         <section className="overflow-hidden rounded-lg border border-[#272722] bg-[#0c0c0b]">
           <div className="border-b border-[#272722] px-4 py-3">
             <h2 className="text-sm font-medium text-zinc-200">{client.name} {config.singular.toLowerCase()} delivery</h2>
-            <p className="mt-0.5 text-xs text-zinc-600">{range.start} through {range.end} delivery spend · CRM acquisition cohorts use each GHL contact’s lead-created date once. Later booking updates that same cohort. Booked uses selected pipeline stage mappings when configured, otherwise exact conventional booked stages/tags.</p>
+            <p className="mt-0.5 text-xs text-zinc-600">{range.start} through {range.end} delivery spend · Meta Leads and Meta CPL come from Meta delivery actions and reported cost per action when available. CRM acquisition cohorts use each GHL contact’s lead-created date once. Later booking updates that same cohort. Booked uses selected pipeline stage mappings when configured, otherwise exact conventional booked stages/tags.</p>
           </div>
           {rows.length === 0 ? (
             <EmptyState title={`No stored ${config.singular.toLowerCase()}s`} copy={`Run a Meta sync for ${client.name} to store ${config.singular.toLowerCase()} hierarchy and daily delivery metrics.`} compact />
@@ -286,8 +293,12 @@ export async function ClientMetaReport({
   );
 }
 
-function MetricCells({ metrics }: { metrics: Metric }) {
-  return <><td className="numeric px-3 py-3">{currency(metrics.spendCents)}</td><td className="numeric px-3 py-3">{number(metrics.impressions)}</td><td className="numeric px-3 py-3">{number(metrics.reach)}</td><td className="numeric px-3 py-3">{number(metrics.clicks)}</td><td className="numeric px-3 py-3">{optionalNumber(metrics.linkClicks)}</td><td className="numeric px-3 py-3">{ctr(metrics)}</td><td className="numeric px-3 py-3">{linkCtr(metrics)}</td><td className="numeric px-3 py-3">{cpc(metrics)}</td><td className="numeric px-4 py-3">{costPerLinkClick(metrics)}</td></>;
+function metaCpl(metrics: TotalMetric) {
+  return metrics.leads > 0 ? currency(metrics.metaLeadCostCents / metrics.leads) : "—";
+}
+
+function MetricCells({ metrics }: { metrics: TotalMetric }) {
+  return <><td className="numeric px-3 py-3">{currency(metrics.spendCents)}</td><td className="numeric px-3 py-3">{number(metrics.leads)}</td><td className="numeric px-3 py-3">{metaCpl(metrics)}</td><td className="numeric px-3 py-3">{number(metrics.impressions)}</td><td className="numeric px-3 py-3">{number(metrics.reach)}</td><td className="numeric px-3 py-3">{number(metrics.clicks)}</td><td className="numeric px-3 py-3">{optionalNumber(metrics.linkClicks)}</td><td className="numeric px-3 py-3">{ctr(metrics)}</td><td className="numeric px-3 py-3">{linkCtr(metrics)}</td><td className="numeric px-3 py-3">{cpc(metrics)}</td><td className="numeric px-4 py-3">{costPerLinkClick(metrics)}</td></>;
 }
 
 function sumCrmMetrics(values: CrmMetrics[]) {
@@ -295,7 +306,7 @@ function sumCrmMetrics(values: CrmMetrics[]) {
 }
 
 function CrmHeaders() {
-  return <><th className="numeric px-3 py-3 font-medium">CRM leads</th><th className="numeric px-3 py-3 font-medium">Booked</th><th className="numeric px-3 py-3 font-medium">CRM CPL</th><th className="numeric px-4 py-3 font-medium">Cost / booked</th></>;
+  return <><th className="numeric px-3 py-3 font-medium">CRM Leads</th><th className="numeric px-3 py-3 font-medium">Booked</th><th className="numeric px-3 py-3 font-medium">CRM CPL</th><th className="numeric px-4 py-3 font-medium">Cost / Booked</th></>;
 }
 
 function CrmCells({ crm, spendCents, drilldown }: { crm: CrmMetrics; spendCents: number; drilldown?: { clientId: string; level: ReportLevel; id: string; range: DateRange } }) {
@@ -311,10 +322,12 @@ function resolveSort(searchParams: ReportSearchParams): { key: SortKey; directio
   return { key, direction: first(searchParams.direction) === "asc" ? "asc" : "desc" };
 }
 
-function sortValue(row: ReportRow, metrics: Metric, key: SortKey): number | string | null {
+function sortValue(row: ReportRow, metrics: TotalMetric, key: SortKey): number | string | null {
   switch (key) {
     case "status": return row.status?.trim().toLocaleLowerCase() || null;
     case "spend": return metrics.spendCents;
+    case "metaLeads": return metrics.leads;
+    case "metaCpl": return metrics.leads > 0 ? metrics.metaLeadCostCents / metrics.leads : null;
     case "impressions": return metrics.impressions;
     case "reach": return metrics.reach;
     case "clicks": return metrics.clicks;
@@ -326,7 +339,7 @@ function sortValue(row: ReportRow, metrics: Metric, key: SortKey): number | stri
   }
 }
 
-function compareRows(leftRow: ReportRow, leftMetrics: Metric, rightRow: ReportRow, rightMetrics: Metric, sort: { key: SortKey; direction: "asc" | "desc" }) {
+function compareRows(leftRow: ReportRow, leftMetrics: TotalMetric, rightRow: ReportRow, rightMetrics: TotalMetric, sort: { key: SortKey; direction: "asc" | "desc" }) {
   const left = sortValue(leftRow, leftMetrics, sort.key);
   const right = sortValue(rightRow, rightMetrics, sort.key);
   if (left === null && right === null) return leftRow.name.localeCompare(rightRow.name);
@@ -390,7 +403,7 @@ function RowName({ row, level, clientId, range }: { row: ReportRow; level: Repor
 }
 
 async function loadRows(clientId: string, level: ReportLevel, range: DateRange, parent: { campaignId?: string; adsetId?: string }): Promise<ReportRow[]> {
-  const metricSelect = { spendCents: true, impressions: true, reach: true, clicks: true, linkClicks: true, leads: true } as const;
+  const metricSelect = { spendCents: true, impressions: true, reach: true, clicks: true, linkClicks: true, leads: true, metaLeadCostCents: true } as const;
   const metricWhere = { level, date: { gte: range.gte, lt: range.lt } };
   const crmById = await loadCrmMetrics(clientId, level, range);
   if (level === "CAMPAIGN") {

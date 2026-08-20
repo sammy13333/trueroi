@@ -44,6 +44,7 @@ type MetaInsight = {
   reach?: string;
   clicks?: string;
   actions?: Array<{ action_type?: string; value?: string }>;
+  cost_per_action_type?: Array<{ action_type?: string; value?: string }>;
 };
 
 type MetaErrorPayload = {
@@ -100,10 +101,42 @@ function dollarsToCents(value: string | undefined): number {
   return Number.isFinite(parsed) ? Math.round(parsed * 100) : 0;
 }
 
+const META_LEAD_ACTION_TYPES = new Set(["lead", "onsite_conversion.lead_grouped", "offsite_conversion.fb_pixel_lead", "omni_lead"]);
+
+function leadActions(actions: MetaInsight["actions"]) {
+  return (actions ?? []).flatMap((action) => {
+    const actionType = action.action_type;
+    const count = toInt(action.value);
+    return actionType && META_LEAD_ACTION_TYPES.has(actionType) && count > 0 ? [{ actionType, count }] : [];
+  });
+}
+
 function leadCount(actions: MetaInsight["actions"]): number {
   return (actions ?? []).reduce((total, action) => {
     const type = action.action_type ?? "";
-    return total + (["lead", "onsite_conversion.lead_grouped", "offsite_conversion.fb_pixel_lead", "omni_lead"].includes(type) ? toInt(action.value) : 0);
+    return total + (META_LEAD_ACTION_TYPES.has(type) ? toInt(action.value) : 0);
+  }, 0);
+}
+
+function metaLeadCostCents(insight: MetaInsight): number | null {
+  const actions = leadActions(insight.actions);
+  const leads = actions.reduce((total, action) => total + action.count, 0);
+  if (leads === 0) return null;
+
+  const costPerAction = new Map(
+    (insight.cost_per_action_type ?? [])
+      .flatMap((cost) => {
+        const actionType = cost.action_type;
+        const dollars = Number(cost.value);
+        return actionType && Number.isFinite(dollars) && dollars >= 0 ? [[actionType, dollars] as const] : [];
+      }),
+  );
+  const spendCents = dollarsToCents(insight.spend);
+  return actions.reduce((total, action) => {
+    const cost = costPerAction.get(action.actionType);
+    return total + (cost === undefined
+      ? Math.round((spendCents * action.count) / leads)
+      : Math.round(cost * action.count * 100));
   }, 0);
 }
 
@@ -252,7 +285,7 @@ export async function syncClientMeta(clientId: string): Promise<ClientMetaSyncRe
       adIds.set(ad.id, record.id);
     });
 
-    const insightFields = "date_start,campaign_id,adset_id,ad_id,spend,impressions,reach,clicks,actions";
+    const insightFields = "date_start,campaign_id,adset_id,ad_id,spend,impressions,reach,clicks,actions,cost_per_action_type";
     const [campaignInsights, adsetInsights, adInsights] = await Promise.all([
       metaCollection<MetaInsight>(`${accountId}/insights`, insightFields, token, { level: "campaign", time_increment: "1", date_preset: "maximum" }),
       metaCollection<MetaInsight>(`${accountId}/insights`, insightFields, token, { level: "adset", time_increment: "1", date_preset: "maximum" }),
@@ -274,7 +307,7 @@ export async function syncClientMeta(clientId: string): Promise<ClientMetaSyncRe
         const adsetId = insight.adset_id ? adsetIds.get(insight.adset_id) ?? null : null;
         const adId = insight.ad_id ? adIds.get(insight.ad_id) ?? null : null;
         const subjectMetaId = level === "CAMPAIGN" ? insight.campaign_id! : level === "ADSET" ? insight.adset_id! : insight.ad_id!;
-        const data = { clientId, date, level, subjectMetaId, campaignId, adsetId, adId, spendCents: dollarsToCents(insight.spend), impressions: toInt(insight.impressions), reach: toInt(insight.reach), clicks: toInt(insight.clicks), linkClicks: linkClickCount(insight.actions), leads: leadCount(insight.actions) };
+        const data = { clientId, date, level, subjectMetaId, campaignId, adsetId, adId, spendCents: dollarsToCents(insight.spend), impressions: toInt(insight.impressions), reach: toInt(insight.reach), clicks: toInt(insight.clicks), linkClicks: linkClickCount(insight.actions), leads: leadCount(insight.actions), metaLeadCostCents: metaLeadCostCents(insight) };
         await prisma.clientDailyMetaMetric.upsert({
           where: { clientId_date_level_subjectMetaId: { clientId, date, level, subjectMetaId } },
           create: data,
