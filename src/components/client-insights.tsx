@@ -64,7 +64,8 @@ function buildSeries(
     const byKey = new Map(buckets.map((bucket) => [bucket.key, bucket]));
     for (const opportunity of opportunities) {
       if (!opportunity.sourceCreatedAt) continue;
-      byKey.get(periodKey(opportunity.sourceCreatedAt, period))?.leads++;
+      const bucket = byKey.get(periodKey(opportunity.sourceCreatedAt, period));
+      if (bucket) bucket.leads++;
     }
     for (const metric of metrics) {
       const bucket = byKey.get(periodKey(metric.date, period));
