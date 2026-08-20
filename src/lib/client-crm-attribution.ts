@@ -13,6 +13,7 @@ export type AttributionOpportunity = {
   campaignMetaId: string | null;
   adsetMetaId: string | null;
   adMetaId: string | null;
+  utmMedium: string | null;
   utmCampaign: string | null;
   utmContent: string | null;
   utmTerm: string | null;
@@ -52,7 +53,7 @@ function parseEvidence(value: string): AttributionEvidence[] {
 }
 
 function normalized(value: string | null | undefined) {
-  const result = value?.trim().toLocaleLowerCase();
+  const result = value?.normalize("NFKC").trim().replace(/\s+/g, " ").toLocaleLowerCase();
   return result || null;
 }
 
@@ -62,6 +63,7 @@ function savedEvidence(opportunity: AttributionOpportunity): AttributionEvidence
     ["campaignMetaId", opportunity.campaignMetaId],
     ["adsetMetaId", opportunity.adsetMetaId],
     ["adMetaId", opportunity.adMetaId],
+    ["utmMedium", opportunity.utmMedium],
     ["utmCampaign", opportunity.utmCampaign],
     ["utmContent", opportunity.utmContent],
     ["utmTerm", opportunity.utmTerm],
@@ -72,53 +74,106 @@ function savedEvidence(opportunity: AttributionOpportunity): AttributionEvidence
   return [...raw, ...legacy].filter((item, index, items) => items.findIndex((candidate) => candidate.field === item.field && candidate.source === item.source && candidate.value === item.value) === index);
 }
 
-/**
- * Maps an opportunity only from exact saved Meta IDs. Campaign/ad-set/ad names
- * and timestamps are deliberately never used as attribution evidence.
- */
 export function resolveCrmAttribution(
   opportunity: AttributionOpportunity,
   hierarchy: { campaigns: Campaign[]; adsets: Adset[]; ads: Ad[] },
 ): CrmAttributionResolution {
   const evidence = savedEvidence(opportunity);
-  const campaignFields = new Set(["campaignMetaId", "utmCampaign", "utmContent", "utmTerm"]);
-  const adsetFields = new Set(["adsetMetaId", "utmContent", "utmTerm"]);
-  const adFields = new Set(["adMetaId", "utmContent", "utmTerm"]);
-  const candidateEvidence = evidence.filter((item) => campaignFields.has(item.field) || adsetFields.has(item.field) || adFields.has(item.field));
-  if (!candidateEvidence.length) {
-    return { attribution: null, method: null, evidence: [], unmatchedReason: "No saved Meta ID evidence. Names and timestamps are not used for attribution." };
+  const campaignIdEvidence = evidence.filter((item) => item.field === "campaignMetaId");
+  const adsetIdEvidence = evidence.filter((item) => item.field === "adsetMetaId");
+  const adIdEvidence = evidence.filter((item) => item.field === "adMetaId");
+  const idEvidence = [...campaignIdEvidence, ...adsetIdEvidence, ...adIdEvidence];
+  const campaignMatches = hierarchy.campaigns.filter((item) => campaignIdEvidence.some((entry) => entry.value === item.metaId));
+  const adsetMatches = hierarchy.adsets.filter((item) => adsetIdEvidence.some((entry) => entry.value === item.metaId));
+  const adMatches = hierarchy.ads.filter((item) => adIdEvidence.some((entry) => entry.value === item.metaId));
+  const matchedEvidence = idEvidence.filter((item) => [...campaignMatches, ...adsetMatches, ...adMatches].some((record) => record.metaId === item.value));
+
+  if (matchedEvidence.length) {
+    if (campaignMatches.length > 1 || adsetMatches.length > 1 || adMatches.length > 1) {
+      return { attribution: null, method: null, evidence: matchedEvidence, unmatchedReason: "Saved Meta ID evidence identifies more than one record at the same hierarchy level." };
+    }
+
+    const campaign = campaignMatches[0];
+    const adset = adsetMatches[0];
+    const ad = adMatches[0];
+    const adsetFromAd = ad ? hierarchy.adsets.find((item) => item.id === ad.adsetId) : undefined;
+    const campaignFromAdset = (adset ?? adsetFromAd) ? hierarchy.campaigns.find((item) => item.id === (adset ?? adsetFromAd)!.campaignId) : undefined;
+    const campaignIds = new Set([campaign?.id, campaignFromAdset?.id].filter((id): id is string => Boolean(id)));
+    if (campaignIds.size !== 1) {
+      return { attribution: null, method: null, evidence: matchedEvidence, unmatchedReason: "Saved campaign, ad-set, or ad IDs conflict across Meta hierarchy levels." };
+    }
+    if (adset && ad && adset.id !== adsetFromAd?.id) {
+      return { attribution: null, method: null, evidence: matchedEvidence, unmatchedReason: "Saved ad-set and ad IDs are not in the same Meta hierarchy." };
+    }
+
+    const fields = [...new Set(matchedEvidence.map((item) => item.source))];
+    return {
+      attribution: { campaignId: [...campaignIds][0], adsetId: adset?.id ?? adsetFromAd?.id ?? null, adId: ad?.id ?? null },
+      method: `Exact Meta ID match (${fields.join(", ")})`,
+      evidence: matchedEvidence,
+      unmatchedReason: null,
+    };
   }
 
-  const campaignMatches = hierarchy.campaigns.filter((item) => candidateEvidence.some((evidence) => campaignFields.has(evidence.field) && evidence.value === item.metaId));
-  const adsetMatches = hierarchy.adsets.filter((item) => candidateEvidence.some((evidence) => adsetFields.has(evidence.field) && evidence.value === item.metaId));
-  const adMatches = hierarchy.ads.filter((item) => candidateEvidence.some((evidence) => adFields.has(evidence.field) && evidence.value === item.metaId));
-  const matchedEvidence = candidateEvidence.filter((item) => [...campaignMatches, ...adsetMatches, ...adMatches].some((record) => record.metaId === item.value));
-  if (!matchedEvidence.length) {
-    return { attribution: null, method: null, evidence: candidateEvidence, unmatchedReason: "Saved Meta ID evidence does not exist in the synced Meta hierarchy." };
+  const matchingCampaignNames = (field: "utmCampaign" | "utmMedium") => {
+    const fieldEvidence = evidence.filter((item) => item.field === field);
+    const matches = hierarchy.campaigns.filter((campaign) => fieldEvidence.some((entry) => normalized(entry.value) === normalized(campaign.name)));
+    return { fieldEvidence, matches };
+  };
+  const campaignNameMatch = matchingCampaignNames("utmCampaign");
+  if (campaignNameMatch.matches.length === 1) {
+    return {
+      attribution: { campaignId: campaignNameMatch.matches[0].id, adsetId: null, adId: null },
+      method: "Exact normalized Meta campaign name match (utm_campaign)",
+      evidence: campaignNameMatch.fieldEvidence.filter((item) => normalized(item.value) === normalized(campaignNameMatch.matches[0].name)),
+      unmatchedReason: null,
+    };
   }
-  if (campaignMatches.length > 1 || adsetMatches.length > 1 || adMatches.length > 1) {
-    return { attribution: null, method: null, evidence: matchedEvidence, unmatchedReason: "Saved Meta ID evidence identifies more than one record at the same hierarchy level." };
-  }
-
-  const campaign = campaignMatches[0];
-  const adset = adsetMatches[0];
-  const ad = adMatches[0];
-  const adsetFromAd = ad ? hierarchy.adsets.find((item) => item.id === ad.adsetId) : undefined;
-  const campaignFromAdset = (adset ?? adsetFromAd) ? hierarchy.campaigns.find((item) => item.id === (adset ?? adsetFromAd)!.campaignId) : undefined;
-  const campaignIds = new Set([campaign?.id, campaignFromAdset?.id].filter((id): id is string => Boolean(id)));
-  if (campaignIds.size !== 1) {
-    return { attribution: null, method: null, evidence: matchedEvidence, unmatchedReason: "Saved campaign, ad-set, or ad IDs conflict across Meta hierarchy levels." };
-  }
-  if (adset && ad && adset.id !== adsetFromAd?.id) {
-    return { attribution: null, method: null, evidence: matchedEvidence, unmatchedReason: "Saved ad-set and ad IDs are not in the same Meta hierarchy." };
+  if (campaignNameMatch.matches.length > 1) {
+    return { attribution: null, method: null, evidence: campaignNameMatch.fieldEvidence, unmatchedReason: "The saved utm_campaign value matches more than one Meta campaign name." };
   }
 
-  const fields = [...new Set(matchedEvidence.map((item) => item.source))];
+  const adNameEvidence = evidence.filter((item) => item.field === "utmContent");
+  const adNameMatches = hierarchy.ads.filter((ad) => adNameEvidence.some((entry) => normalized(entry.value) === normalized(ad.name)));
+  if (adNameMatches.length === 1) {
+    const ad = adNameMatches[0];
+    const adset = hierarchy.adsets.find((item) => item.id === ad.adsetId);
+    const campaign = adset && hierarchy.campaigns.find((item) => item.id === adset.campaignId);
+    if (!adset || !campaign) {
+      return { attribution: null, method: null, evidence: adNameEvidence, unmatchedReason: "The exactly matched Meta ad does not have a complete synced parent campaign hierarchy." };
+    }
+    return {
+      attribution: { campaignId: campaign.id, adsetId: adset.id, adId: ad.id },
+      method: "Exact normalized Meta ad name match (utm_content)",
+      evidence: adNameEvidence.filter((item) => normalized(item.value) === normalized(ad.name)),
+      unmatchedReason: null,
+    };
+  }
+  if (adNameMatches.length > 1) {
+    return { attribution: null, method: null, evidence: adNameEvidence, unmatchedReason: "The saved utm_content value matches more than one Meta ad name." };
+  }
+
+  const mediumNameMatch = matchingCampaignNames("utmMedium");
+  if (mediumNameMatch.matches.length === 1) {
+    return {
+      attribution: { campaignId: mediumNameMatch.matches[0].id, adsetId: null, adId: null },
+      method: "Exact normalized Meta campaign name match (utm_medium)",
+      evidence: mediumNameMatch.fieldEvidence.filter((item) => normalized(item.value) === normalized(mediumNameMatch.matches[0].name)),
+      unmatchedReason: null,
+    };
+  }
+  if (mediumNameMatch.matches.length > 1) {
+    return { attribution: null, method: null, evidence: mediumNameMatch.fieldEvidence, unmatchedReason: "The saved utm_medium value matches more than one Meta campaign name." };
+  }
+
+  const candidateEvidence = evidence.filter((item) => ["campaignMetaId", "adsetMetaId", "adMetaId", "utmCampaign", "utmContent", "utmMedium"].includes(item.field));
   return {
-    attribution: { campaignId: [...campaignIds][0], adsetId: adset?.id ?? adsetFromAd?.id ?? null, adId: ad?.id ?? null },
-    method: `Exact Meta ID match (${fields.join(", ")})`,
-    evidence: matchedEvidence,
-    unmatchedReason: null,
+    attribution: null,
+    method: null,
+    evidence: candidateEvidence,
+    unmatchedReason: idEvidence.length
+      ? "Saved Meta ID evidence does not exist in the synced Meta hierarchy, and no exact normalized campaign or ad name matched."
+      : "No saved Meta ID, exact normalized campaign name, or exact normalized ad name matched the synced Meta hierarchy.",
   };
 }
 

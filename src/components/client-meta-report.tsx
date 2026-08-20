@@ -430,7 +430,7 @@ async function loadCrmMetrics(clientId: string, level: ReportLevel, range: DateR
     prisma.clientGhlOpportunity.findMany({
       where: { clientId, sourceCreatedAt: { gte: range.gte, lt: range.lt } },
       select: {
-        campaignMetaId: true, adsetMetaId: true, adMetaId: true, utmCampaign: true, utmContent: true, utmTerm: true,
+        campaignMetaId: true, adsetMetaId: true, adMetaId: true, utmMedium: true, utmCampaign: true, utmContent: true, utmTerm: true,
         attributionEvidenceJson: true,
         pipelineStageName: true, tagsJson: true, contact: { select: { tagsJson: true } },
       },
