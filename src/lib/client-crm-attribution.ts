@@ -223,7 +223,7 @@ export function aggregateCanonicalCrmMetrics(leads: CanonicalCrmLeadMetric[], le
 function bookedStageIds(value: string) {
   try {
     const parsed: unknown = JSON.parse(value);
-    return new Set(Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === "string" && id.trim()).map((id) => id.trim()) : []);
+    return new Set(Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === "string" && id.trim().length > 0).map((id) => id.trim()) : []);
   } catch {
     return new Set<string>();
   }

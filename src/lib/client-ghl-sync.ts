@@ -323,7 +323,11 @@ export async function rebuildCanonicalCrmLeads(clientId: string) {
   ]);
   const hierarchy = { campaigns, adsets, ads };
   for (const contact of contacts) {
-    const candidates: Array<AttributionOpportunity & { ghlId?: string; pipelineStageGhlId?: string | null; pipelineStageName?: string | null; tagsJson?: string; pipeline?: { ghlId: string; selected: boolean; bookedStageIdsJson: string } | null }> = [
+    const candidates: Array<AttributionOpportunity & {
+      ghlId?: string; pipelineStageGhlId?: string | null; pipelineStageName?: string | null; tagsJson?: string;
+      attributionSource?: string | null; utmSource?: string | null;
+      pipeline?: { ghlId: string; selected: boolean; bookedStageIdsJson: string } | null;
+    }> = [
       ...contact.opportunities,
       {
         campaignMetaId: contact.campaignMetaId, adsetMetaId: contact.adsetMetaId, adMetaId: contact.adMetaId,
@@ -351,8 +355,8 @@ export async function rebuildCanonicalCrmLeads(clientId: string) {
       create: {
         clientId, contactId: contact.id, ghlContactId: contact.ghlId, ghlOpportunityId: raw.ghlId,
         pipelineGhlId: raw.pipeline?.ghlId, pipelineStageGhlId: raw.pipelineStageGhlId, pipelineStageName: raw.pipelineStageName,
-        attributionSource: "attributionSource" in raw ? raw.attributionSource ?? null : null,
-        utmSource: "utmSource" in raw ? raw.utmSource ?? null : null,
+        attributionSource: raw.attributionSource ?? null,
+        utmSource: raw.utmSource ?? null,
         utmMedium: raw.utmMedium, utmCampaign: raw.utmCampaign, utmContent: raw.utmContent, utmTerm: raw.utmTerm,
         campaignMetaId: raw.campaignMetaId, adsetMetaId: raw.adsetMetaId, adMetaId: raw.adMetaId,
         matchedCampaignId: resolution.attribution?.campaignId, matchedAdsetId: resolution.attribution?.adsetId, matchedAdId: resolution.attribution?.adId,
@@ -363,8 +367,8 @@ export async function rebuildCanonicalCrmLeads(clientId: string) {
       },
       update: {
         ghlOpportunityId: raw.ghlId, pipelineGhlId: raw.pipeline?.ghlId, pipelineStageGhlId: raw.pipelineStageGhlId, pipelineStageName: raw.pipelineStageName,
-        attributionSource: "attributionSource" in raw ? raw.attributionSource ?? null : null,
-        utmSource: "utmSource" in raw ? raw.utmSource ?? null : null,
+        attributionSource: raw.attributionSource ?? null,
+        utmSource: raw.utmSource ?? null,
         utmMedium: raw.utmMedium, utmCampaign: raw.utmCampaign, utmContent: raw.utmContent, utmTerm: raw.utmTerm,
         campaignMetaId: raw.campaignMetaId, adsetMetaId: raw.adsetMetaId, adMetaId: raw.adMetaId,
         matchedCampaignId: resolution.attribution?.campaignId, matchedAdsetId: resolution.attribution?.adsetId, matchedAdId: resolution.attribution?.adId,
