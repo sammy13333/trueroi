@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
 
 function formatLocalDateTime(value: string) {
   return new Intl.DateTimeFormat(undefined, {
@@ -9,12 +9,16 @@ function formatLocalDateTime(value: string) {
   }).format(new Date(value));
 }
 
-export function LocalDateTime({ value }: { value: string | null }) {
-  const [formatted, setFormatted] = useState<string | null>(null);
+function subscribe() {
+  return () => {};
+}
 
-  useEffect(() => {
-    setFormatted(value ? formatLocalDateTime(value) : null);
-  }, [value]);
+export function LocalDateTime({ value }: { value: string | null }) {
+  const formatted = useSyncExternalStore(
+    subscribe,
+    () => value ? formatLocalDateTime(value) : null,
+    () => null,
+  );
 
   if (!value) return <>Not returned by GHL</>;
 
