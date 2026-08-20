@@ -450,7 +450,7 @@ export async function syncClientGhl(clientId: string): Promise<ClientGhlSyncResu
     };
     for (const contact of fetchedContacts) await upsertContact(contact);
 
-    let storedContacts = localContactIds.size;
+    const storedContacts = localContactIds.size;
     let storedOpportunities = 0;
     for (const opportunity of opportunities) {
       const ghlId = asString(opportunity.id);
