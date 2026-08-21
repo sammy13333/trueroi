@@ -8,6 +8,19 @@ const GHL_PAGE_SIZE = 100;
 
 type GhlPipelineStage = { id?: string; name?: string };
 type GhlPipeline = { id?: string; name?: string; stages?: GhlPipelineStage[] };
+type GhlAttributionSource = {
+  source?: string;
+  utmSource?: string;
+  utmMedium?: string;
+  utmCampaign?: string;
+  utmContent?: string;
+  utmTerm?: string;
+  campaignId?: string;
+  adsetId?: string;
+  adId?: string;
+  referrer?: string;
+  fbclid?: string;
+};
 export type GhlContact = {
   id?: string;
   firstName?: string;
@@ -22,6 +35,17 @@ export type GhlContact = {
   customFields?: unknown;
   customField?: unknown;
   customData?: unknown;
+  source?: string;
+  attributionSource?: string | GhlAttributionSource;
+  attributions?: GhlAttributionSource;
+  utmSource?: string;
+  utmMedium?: string;
+  utmCampaign?: string;
+  utmContent?: string;
+  utmTerm?: string;
+  campaignId?: string;
+  adsetId?: string;
+  adId?: string;
 };
 type GhlOpportunity = {
   id?: string;
@@ -35,7 +59,7 @@ type GhlOpportunity = {
   createdAt?: string;
   updatedAt?: string;
   lastStatusChangeAt?: string;
-  attributionSource?: string;
+  attributionSource?: string | GhlAttributionSource;
   source?: string;
   utmSource?: string;
   utmMedium?: string;
@@ -49,17 +73,7 @@ type GhlOpportunity = {
   customFields?: unknown;
   customField?: unknown;
   customData?: unknown;
-  attributions?: {
-    source?: string;
-    utmSource?: string;
-    utmMedium?: string;
-    utmCampaign?: string;
-    utmContent?: string;
-    utmTerm?: string;
-    campaignId?: string;
-    adsetId?: string;
-    adId?: string;
-  };
+  attributions?: GhlAttributionSource;
 };
 type GhlOpportunityPage = {
   opportunities?: GhlOpportunity[];
@@ -151,25 +165,36 @@ export function extractAttributionEvidence(record: GhlOpportunity | GhlContact, 
     if (storedValue) evidence.push({ scope, field, source, value: storedValue });
   };
   const values = "attributions" in record ? record.attributions : undefined;
-  add("attributionSource", `${scope}.attributionSource`, "attributionSource" in record ? record.attributionSource : undefined);
+  const singular = "attributionSource" in record && record.attributionSource && typeof record.attributionSource === "object"
+    ? record.attributionSource : undefined;
+  add("attributionSource", `${scope}.attributionSource`, "attributionSource" in record && typeof record.attributionSource === "string" ? record.attributionSource : undefined);
+  add("attributionSource", `${scope}.attributionSource.source`, singular?.source);
   add("attributionSource", `${scope}.source`, "source" in record ? record.source : undefined);
   add("attributionSource", `${scope}.attributions.source`, values?.source);
   add("utmSource", `${scope}.utmSource`, "utmSource" in record ? record.utmSource : undefined);
   add("utmSource", `${scope}.attributions.utmSource`, values?.utmSource);
+  add("utmSource", `${scope}.attributionSource.utmSource`, singular?.utmSource);
   add("utmMedium", `${scope}.utmMedium`, "utmMedium" in record ? record.utmMedium : undefined);
   add("utmMedium", `${scope}.attributions.utmMedium`, values?.utmMedium);
+  add("utmMedium", `${scope}.attributionSource.utmMedium`, singular?.utmMedium);
   add("utmCampaign", `${scope}.utmCampaign`, "utmCampaign" in record ? record.utmCampaign : undefined);
   add("utmCampaign", `${scope}.attributions.utmCampaign`, values?.utmCampaign);
+  add("utmCampaign", `${scope}.attributionSource.utmCampaign`, singular?.utmCampaign);
   add("utmContent", `${scope}.utmContent`, "utmContent" in record ? record.utmContent : undefined);
   add("utmContent", `${scope}.attributions.utmContent`, values?.utmContent);
+  add("utmContent", `${scope}.attributionSource.utmContent`, singular?.utmContent);
   add("utmTerm", `${scope}.utmTerm`, "utmTerm" in record ? record.utmTerm : undefined);
   add("utmTerm", `${scope}.attributions.utmTerm`, values?.utmTerm);
+  add("utmTerm", `${scope}.attributionSource.utmTerm`, singular?.utmTerm);
   add("campaignMetaId", `${scope}.campaignId`, "campaignId" in record ? record.campaignId : undefined);
   add("campaignMetaId", `${scope}.attributions.campaignId`, values?.campaignId);
+  add("campaignMetaId", `${scope}.attributionSource.campaignId`, singular?.campaignId);
   add("adsetMetaId", `${scope}.adsetId`, "adsetId" in record ? record.adsetId : undefined);
   add("adsetMetaId", `${scope}.attributions.adsetId`, values?.adsetId);
+  add("adsetMetaId", `${scope}.attributionSource.adsetId`, singular?.adsetId);
   add("adMetaId", `${scope}.adId`, "adId" in record ? record.adId : undefined);
   add("adMetaId", `${scope}.attributions.adId`, values?.adId);
+  add("adMetaId", `${scope}.attributionSource.adId`, singular?.adId);
   evidence.push(
     ...customFieldEvidence(record.customFields, scope, `${scope}.customFields`),
     ...customFieldEvidence(record.customField, scope, `${scope}.customField`),
