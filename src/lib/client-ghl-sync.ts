@@ -306,7 +306,7 @@ export async function fetchLocationContacts(locationId: string, token: string): 
   let cursor: { startAfterId: string; startAfter?: string } | null = null;
   const seenCursors = new Set<string>();
   do {
-    const page = await ghlGet<GhlContactPage>("/contacts/", token, {
+    const page: GhlContactPage = await ghlGet<GhlContactPage>("/contacts/", token, {
       locationId,
       limit: String(GHL_PAGE_SIZE),
       ...(cursor ?? {}),
