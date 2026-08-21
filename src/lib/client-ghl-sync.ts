@@ -378,6 +378,22 @@ function mergedTags(records: GhlContact[]) {
   return [...new Set(tags)];
 }
 
+function firstDefined<T>(records: GhlContact[], field: keyof GhlContact): T | undefined {
+  for (const record of records) {
+    const value = record[field] as T | undefined;
+    if (value !== undefined && value !== null) return value;
+  }
+  return undefined;
+}
+
+function mergedCustomFields(records: GhlContact[]) {
+  const fields = records.flatMap((record) => {
+    const value = record.customFields;
+    return Array.isArray(value) ? value : value && typeof value === "object" ? [value] : [];
+  });
+  return fields.length ? fields : undefined;
+}
+
 /** Combines list, embedded, and detail representations without dropping contact tags or evidence. */
 export function mergeGhlContacts(records: GhlContact[], fallbackId?: string): GhlContact | undefined {
   const id = firstString(records, "id") ?? fallbackId;
@@ -393,6 +409,20 @@ export function mergeGhlContacts(records: GhlContact[], fallbackId?: string): Gh
     createdAt: firstString(records, "createdAt"),
     updatedAt: firstString(records, "updatedAt"),
     tags: mergedTags(records),
+    customFields: mergedCustomFields(records),
+    customField: firstDefined<unknown>(records, "customField"),
+    customData: firstDefined<unknown>(records, "customData"),
+    source: firstString(records, "source"),
+    attributionSource: firstDefined<GhlContact["attributionSource"]>(records, "attributionSource"),
+    attributions: firstDefined<GhlContact["attributions"]>(records, "attributions"),
+    utmSource: firstString(records, "utmSource"),
+    utmMedium: firstString(records, "utmMedium"),
+    utmCampaign: firstString(records, "utmCampaign"),
+    utmContent: firstString(records, "utmContent"),
+    utmTerm: firstString(records, "utmTerm"),
+    campaignId: firstString(records, "campaignId"),
+    adsetId: firstString(records, "adsetId"),
+    adId: firstString(records, "adId"),
   };
 }
 
