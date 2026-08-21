@@ -49,6 +49,18 @@ enum PaymentType {
   OTHER
 }
 
+enum ClientReceivableType {
+  RETAINER
+  SETUP_FEE
+  REV_SHARE
+  OTHER
+}
+
+enum ClientReceivableStatus {
+  OWED
+  PAID
+}
+
 model AgencyProfile {
   id                 String    @id @default("default")
   name               String    @default("My Agency")
@@ -93,8 +105,27 @@ model Client {
   metaAdsets           ClientMetaAdset[]
   metaAds              ClientMetaAd[]
   dailyMetaMetrics     ClientDailyMetaMetric[]
+  receivables          ClientReceivable[]
   createdAt            DateTime                @default(now())
   updatedAt            DateTime                @updatedAt
+}
+
+model ClientReceivable {
+  id          String                 @id @default(cuid())
+  clientId    String?
+  client      Client?                @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  customerName String
+  type        ClientReceivableType
+  amountCents Int
+  dueDate     DateTime
+  status      ClientReceivableStatus @default(OWED)
+  paidDate    DateTime?
+  notes       String?
+  createdAt   DateTime               @default(now())
+
+  @@index([clientId])
+  @@index([dueDate])
+  @@index([status])
 }
 
 model ClientPipeline {
