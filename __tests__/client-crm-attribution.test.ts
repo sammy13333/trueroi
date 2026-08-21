@@ -44,7 +44,9 @@ describe("booked and aggregation rules", () => {
   it("uses only normalized GHL contact booked tags", () => {
     expect(isBookedAppointment({ tagsJson: "[\"Booked_Appointment\"]" })).toBe(true);
     expect(isBookedAppointment({ tagsJson: "[\"APPOINTMENT-booked\"]" })).toBe(true);
+    expect(isBookedAppointment({ tagsJson: "[\" BOOKED_estimate \"]" })).toBe(true);
     expect(isBookedAppointment({ tagsJson: "[\"booked\", \"new lead\"]" })).toBe(false);
+    expect(isBookedAppointment({ tagsJson: "[\"booked estimate follow-up\"]" })).toBe(false);
   });
 
   it("dedupes a contact across opportunities and keeps zero-denominator rows at zero", () => {

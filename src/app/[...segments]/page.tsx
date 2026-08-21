@@ -108,7 +108,7 @@ export default async function ClientRoutePage({
                 <p className="mt-3 text-xs text-zinc-500">Stored daily metric rows: {client._count.dailyMetaMetrics} · Latest coverage: {latestCoverage ? latestCoverage.toISOString().slice(0, 10) : "No daily insights stored"}</p>
               </section>;
             })()}
-            <div className="mt-5 border-t pt-5"><FetchPipelinesButton clientId={client.id} />{client.pipelines.length > 0 && <p className="mt-3 text-xs text-emerald-400">Imported pipelines: {client.pipelines.map((pipeline) => pipeline.name).join(", ")}</p>}<p className="mt-3 text-xs text-zinc-500">CRM outcomes use live GHL contact tags: <span className="font-mono">new lead</span> for CRM leads and <span className="font-mono">booked appointment</span> or <span className="font-mono">appointment booked</span> for booked appointments.</p></div>
+            <div className="mt-5 border-t pt-5"><FetchPipelinesButton clientId={client.id} />{client.pipelines.length > 0 && <p className="mt-3 text-xs text-emerald-400">Imported pipelines: {client.pipelines.map((pipeline) => pipeline.name).join(", ")}</p>}<p className="mt-3 text-xs text-zinc-500">Client ROI prioritizes exact normalized live GHL contact tags: <span className="font-mono">new lead</span> defines CRM leads, and <span className="font-mono">booked appointment</span>, <span className="font-mono">appointment booked</span>, or <span className="font-mono">booked estimate</span> marks a lead booked. Meta lead actions remain delivery metrics.</p></div>
           </section>
         </div>
       ) : section === "clients" ? (

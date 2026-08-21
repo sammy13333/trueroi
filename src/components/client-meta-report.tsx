@@ -74,7 +74,7 @@ type SortKey = "spend" | "impressions" | "reach" | "clicks" | "linkClicks" | "me
 const sortableColumns: Array<{ key: SortKey; label: string }> = [
   { key: "status", label: "Status" },
   { key: "spend", label: "Spend" },
-  { key: "metaLeads", label: "Meta Leads" },
+  { key: "metaLeads", label: "Meta lead actions" },
   { key: "metaCpl", label: "Meta CPL" },
   { key: "impressions", label: "Impressions" },
   { key: "reach", label: "Reach" },
@@ -254,8 +254,8 @@ export async function ClientMetaReport({
         </section>
         <section className="overflow-hidden rounded-lg border border-[#272722] bg-[#0c0c0b]">
           <div className="border-b border-[#272722] px-4 py-3">
-            <h2 className="text-sm font-medium text-zinc-200">{client.name} {config.singular.toLowerCase()} delivery</h2>
-            <p className="mt-0.5 text-xs text-zinc-600">{range.start} through {range.end} delivery spend · Meta Leads and Meta CPL come from Meta delivery actions and reported cost per action when available. CRM acquisition cohorts include attributed GHL contacts tagged “new lead” once. Later contact-tag updates can mark that cohort booked when tagged “booked appointment” or “appointment booked”.</p>
+            <h2 className="text-sm font-medium text-zinc-200">{client.name} CRM outcomes and {config.singular.toLowerCase()} delivery</h2>
+            <p className="mt-0.5 text-xs text-zinc-600">{range.start} through {range.end} · CRM Leads are the primary business count: attributed GHL contacts with the exact normalized tag “new lead”, counted once. Booked is updated from that contact’s exact normalized “booked appointment”, “appointment booked”, or “booked estimate” tag. Meta lead actions and Meta CPL remain delivery metrics, not CRM business lead counts.</p>
           </div>
           {rows.length === 0 ? (
             <EmptyState title={`No stored ${config.singular.toLowerCase()}s`} copy={`Run a Meta sync for ${client.name} to store ${config.singular.toLowerCase()} hierarchy and daily delivery metrics.`} compact />
@@ -266,21 +266,22 @@ export async function ClientMetaReport({
                   <tr>
                     <th className="min-w-56 px-4 py-3 font-medium">{config.singular}</th>
                     <th className="min-w-40 px-3 py-3 font-medium">Parent</th>
-                    {sortableColumns.map((column) => <SortableHeader key={column.key} column={column} path={path} clientId={client.id} range={range} parentId={level === "ADSET" ? first(searchParams.campaignId) : level === "AD" ? first(searchParams.adsetId) : undefined} parentKey={level === "ADSET" ? "campaignId" : level === "AD" ? "adsetId" : undefined} sort={sort} />)}
                     <CrmHeaders />
+                    {sortableColumns.map((column) => <SortableHeader key={column.key} column={column} path={path} clientId={client.id} range={range} parentId={level === "ADSET" ? first(searchParams.campaignId) : level === "AD" ? first(searchParams.adsetId) : undefined} parentKey={level === "ADSET" ? "campaignId" : level === "AD" ? "adsetId" : undefined} sort={sort} />)}
                   </tr>
                 </thead>
                 <tbody>
                   <tr className="border-b border-[#272722] bg-[#090909] font-medium text-zinc-300">
-                    <td className="px-4 py-3">Total</td><td> </td><td> </td>
-                    <MetricCells metrics={totals} /><CrmCells crm={crmTotals} spendCents={totals.spendCents} />
+                    <td className="px-4 py-3">Total</td><td> </td>
+                    <CrmCells crm={crmTotals} spendCents={totals.spendCents} /><MetricCells metrics={totals} />
                   </tr>
                   {sortedRows.map(({ row, metrics }) => (
                     <tr key={row.id} className="border-b border-[#272722] text-zinc-400 last:border-b-0">
                       <td className="px-4 py-3"><RowName row={row} level={level} clientId={client.id} range={range} />{row.detail && <p className="mt-1 text-[11px] text-zinc-600">{row.detail}</p>}</td>
                       <td className="px-3 py-3 text-zinc-500">{row.parent ?? "—"}</td>
+                      <CrmCells crm={row.crm} spendCents={metrics.spendCents} drilldown={{ clientId: client.id, level, id: row.id, range }} />
                       <td className="px-3 py-3"><Status status={row.status} /></td>
-                      <MetricCells metrics={metrics} /><CrmCells crm={row.crm} spendCents={metrics.spendCents} drilldown={{ clientId: client.id, level, id: row.id, range }} />
+                      <MetricCells metrics={metrics} />
                     </tr>
                   ))}
                 </tbody>

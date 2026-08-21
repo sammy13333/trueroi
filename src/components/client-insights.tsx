@@ -45,7 +45,7 @@ function periodKey(value: Date, period: Period) {
 }
 
 function buildSeries(
-  opportunities: Array<{ sourceCreatedAt: Date | null }>,
+  leads: Array<{ leadCreatedAt: Date | null }>,
   metrics: Array<{ date: Date; spendCents: number }>,
 ): Series {
   const now = startOfUtcDay(new Date());
@@ -62,9 +62,9 @@ function buildSeries(
       return { key: dateKey(bucketStart), label: dateKey(bucketStart), leads: 0, spendCents: 0, hasMetaMetric: false };
     });
     const byKey = new Map(buckets.map((bucket) => [bucket.key, bucket]));
-    for (const opportunity of opportunities) {
-      if (!opportunity.sourceCreatedAt) continue;
-      const bucket = byKey.get(periodKey(opportunity.sourceCreatedAt, period));
+    for (const lead of leads) {
+      if (!lead.leadCreatedAt) continue;
+      const bucket = byKey.get(periodKey(lead.leadCreatedAt, period));
       if (bucket) bucket.leads++;
     }
     for (const metric of metrics) {
@@ -89,31 +89,31 @@ export async function ClientInsights({ requestedClientId }: { requestedClientId?
   const clientId = clients.some((client) => client.id === requestedId) ? requestedId! : clients[0]?.id;
 
   if (!clientId) {
-    return <AppShell><PageHeader eyebrow="Client ROI" title="Client insights" description="CRM lead volume and Meta spend for a selected client." /><EmptyState title="No client account is available" copy="Add a client, then connect GoHighLevel and Meta to see client-specific insights." /></AppShell>;
+    return <AppShell><PageHeader eyebrow="Client ROI" title="Client insights" description="Tag-based CRM lead volume and Meta spend for a selected client." /><EmptyState title="No client account is available" copy="Add a client, then connect GoHighLevel and Meta to see client-specific insights." /></AppShell>;
   }
 
-  const [client, opportunities, metrics, storedOpportunityCount] = await Promise.all([
+  const [client, leads, metrics, storedCrmLeadCount] = await Promise.all([
     prisma.client.findUniqueOrThrow({ where: { id: clientId }, select: { id: true, name: true } }),
-    prisma.clientGhlOpportunity.findMany({ where: { clientId, sourceCreatedAt: { not: null } }, select: { sourceCreatedAt: true } }),
+    prisma.clientCrmLead.findMany({ where: { clientId, leadCreatedAt: { not: null } }, select: { leadCreatedAt: true } }),
     prisma.clientDailyMetaMetric.findMany({ where: { clientId, level: "CAMPAIGN" }, select: { date: true, spendCents: true } }),
-    prisma.clientGhlOpportunity.count({ where: { clientId } }),
+    prisma.clientCrmLead.count({ where: { clientId } }),
   ]);
-  const series = buildSeries(opportunities, metrics);
+  const series = buildSeries(leads, metrics);
   const hasMetaMetrics = metrics.length > 0;
 
   return (
     <AppShell>
-      <PageHeader eyebrow="Client ROI" title="Client insights" description="Source-dated GoHighLevel CRM opportunities and matching campaign-level Meta spend. Meta delivery lead actions are excluded." actions={<div className="flex flex-wrap gap-2"><ClientGhlSyncButton clientId={client.id} /><ClientMetaSyncButton clientId={client.id} /></div>} />
+      <PageHeader eyebrow="Client ROI" title="Client insights" description="Tag-based GoHighLevel CRM leads and matching campaign-level Meta spend. Meta delivery lead actions are available separately and are not business lead counts." actions={<div className="flex flex-wrap gap-2"><ClientGhlSyncButton clientId={client.id} /><ClientMetaSyncButton clientId={client.id} /></div>} />
       <section className="flex flex-wrap items-center gap-2 border-b border-[#272722] bg-[#080808] px-5 py-3 sm:px-8">
         <span className="mr-1 text-xs text-zinc-600">Client:</span>
         {clients.map((item) => <Link key={item.id} href={`/insights?clientId=${item.id}`} className={`rounded-md border px-3 py-1.5 text-xs ${item.id === client.id ? "border-[#27b7df]/50 bg-[#27b7df]/10 text-[#71d8ef]" : "bg-[#0d161e] text-zinc-400"}`}>{item.name}</Link>)}
         <Link href={`/clients/${client.id}`} className="ml-auto text-xs text-zinc-500 hover:text-zinc-200">Client workspace</Link>
       </section>
       <div className="m-5 space-y-5 sm:m-8">
-        {storedOpportunityCount === 0 ? (
-          <EmptyState title="No GHL CRM opportunities are stored" copy={`To populate ${client.name} insights, save its GoHighLevel location ID and private integration token, grant it opportunities and contacts read access, then run “Sync GHL CRM leads.”`} compact />
-        ) : opportunities.length === 0 ? (
-          <EmptyState title="Stored GHL opportunities have no source created date" copy="GoHighLevel must return an opportunity createdAt value before lead volume can be placed in day, week, or month reporting. Run the GHL sync again after verifying the integration can read opportunities." compact />
+        {storedCrmLeadCount === 0 ? (
+          <EmptyState title="No tag-based CRM leads are stored" copy={`CRM leads require an exact normalized “new lead” contact tag. To populate ${client.name} insights, sync GoHighLevel contacts and opportunities after confirming that tag is applied.`} compact />
+        ) : leads.length === 0 ? (
+          <EmptyState title="Stored CRM leads have no source created date" copy="GoHighLevel must return a contact createdAt or dateAdded value before tag-based CRM leads can be placed in day, week, or month reporting. Run the GHL sync again after verifying the integration can read contacts." compact />
         ) : (
           <>
             <ClientLeadVolumeChart series={series} />

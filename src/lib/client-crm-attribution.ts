@@ -196,7 +196,7 @@ function parseTags(value: string) {
 }
 
 export const GHL_NEW_LEAD_TAG = "new lead";
-const GHL_BOOKED_APPOINTMENT_TAGS = new Set(["booked appointment", "appointment booked"]);
+const GHL_BOOKED_APPOINTMENT_TAGS = new Set(["booked appointment", "appointment booked", "booked estimate"]);
 
 /** Tags are normalized with Unicode case folding and any separator collapsed to a space. */
 export function hasGhlContactTag(contact: { tagsJson: string }, tag: string) {
@@ -233,7 +233,7 @@ export function aggregateCanonicalCrmMetrics(leads: CanonicalCrmLeadMetric[], le
   return counts;
 }
 
-/** Booking is determined only from the attributed GHL contact's live tags. */
+/** Booking is determined only from the attributed GHL contact's live exact normalized outcome tags. */
 export function isBookedAppointment(contact: { tagsJson: string }) {
   return parseTags(contact.tagsJson).some((tag) => GHL_BOOKED_APPOINTMENT_TAGS.has(tag));
 }
