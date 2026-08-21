@@ -43,7 +43,7 @@ export async function ClientDiagnostics({
     );
   }
 
-  const [client, metrics, unmatchedLeads, bookedLeads] = await Promise.all([
+  const [client, metrics, unmatchedLeads, bookedLeads, contactOnlyLeads] = await Promise.all([
     prisma.client.findUniqueOrThrow({
       where: { id: clientId },
       select: {
@@ -79,6 +79,7 @@ export async function ClientDiagnostics({
     }),
     prisma.clientCrmLead.count({ where: { clientId, unmatchedReason: { not: null } } }),
     prisma.clientCrmLead.count({ where: { clientId, booked: true } }),
+    prisma.clientCrmLead.count({ where: { clientId, ghlOpportunityId: null } }),
   ]);
 
   const latestMetaSync = client.syncLogs.find((log) => log.mode === "META");
@@ -119,8 +120,9 @@ export async function ClientDiagnostics({
           <CoverageCard label="Meta ads" value={count(client._count.metaAds)} detail="Stored hierarchy records" />
           <CoverageCard label="Daily Meta metrics" value={count(client._count.dailyMetaMetrics)} detail={metricRange} />
           <CoverageCard label="GHL pipelines" value={count(client._count.pipelines)} detail="Stored pipeline records" />
+          <CoverageCard label="GHL contacts" value={count(client._count.ghlContacts)} detail="All stored contacts for this location" />
           <CoverageCard label="GHL opportunities" value={count(client._count.ghlOpportunities)} detail="Stored CRM opportunity records" />
-          <CoverageCard label="Canonical CRM leads" value={count(client._count.crmLeads)} detail={`${count(bookedLeads)} booked by contact tag · deduped by GHL contact`} />
+          <CoverageCard label="Canonical CRM leads" value={count(client._count.crmLeads)} detail={`${count(bookedLeads)} booked by contact tag · ${count(contactOnlyLeads)} without an opportunity`} />
           <CoverageCard label="Unmatched CRM leads" value={count(unmatchedLeads)} detail="Exact ID/name matching failures are retained for review" />
         </section>
 
@@ -132,7 +134,7 @@ export async function ClientDiagnostics({
           <div className="divide-y divide-[#272722] text-sm">
             <SourceCheck label="Meta hierarchy" value={`${count(client._count.metaCampaigns)} campaigns · ${count(client._count.metaAdsets)} ad sets · ${count(client._count.metaAds)} ads`} detail={syncDetail(latestMetaSync)} />
             <SourceCheck label="Daily Meta delivery" value={`${count(client._count.dailyMetaMetrics)} metric rows`} detail={metricRange} />
-            <SourceCheck label="GoHighLevel CRM" value={`${count(client._count.pipelines)} pipelines · ${count(client._count.ghlContacts)} contacts · ${count(client._count.ghlOpportunities)} opportunities`} detail={`${syncDetail(latestGhlSync)} · ${count(client._count.crmLeads)} contacts tagged new lead, ${count(unmatchedLeads)} unmatched`} />
+            <SourceCheck label="GoHighLevel CRM" value={`${count(client._count.pipelines)} pipelines · ${count(client._count.ghlContacts)} contacts · ${count(client._count.ghlOpportunities)} opportunities`} detail={`${syncDetail(latestGhlSync)} · ${count(client._count.crmLeads)} contacts tagged new lead, ${count(contactOnlyLeads)} without an opportunity, ${count(unmatchedLeads)} unmatched`} />
           </div>
         </section>
         {isOwner && <ClientAttributionTrace clientId={client.id} />}
@@ -152,7 +154,7 @@ function coverageGap({
     metaAccessTokenEnc: string | null;
     ghlLocationId: string | null;
     ghlPrivateTokenEnc: string | null;
-    _count: { metaCampaigns: number; metaAdsets: number; metaAds: number; pipelines: number; ghlOpportunities: number };
+    _count: { metaCampaigns: number; metaAdsets: number; metaAds: number; pipelines: number; ghlContacts: number; ghlOpportunities: number };
   };
   metricCount: number;
   latestMetaSync: { status: string; message: string | null } | undefined;
@@ -173,8 +175,8 @@ function coverageGap({
   if (latestGhlSync?.status === "FAILED") {
     return { provider: "GHL" as const, title: "The latest GoHighLevel sync failed", detail: latestGhlSync.message ?? "Verify the client’s GHL token scopes and location ID, then run the CRM sync again." };
   }
-  if (client._count.pipelines === 0 || client._count.ghlOpportunities === 0) {
-    return { provider: "GHL" as const, title: "GoHighLevel coverage is missing", detail: "Run a GHL CRM sync to store pipelines and opportunities for this client." };
+  if (client._count.ghlContacts === 0) {
+    return { provider: "GHL" as const, title: "GoHighLevel contact coverage is missing", detail: "Run a GHL CRM sync to import every contact for this location, including contacts without opportunities." };
   }
   return null;
 }

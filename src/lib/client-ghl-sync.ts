@@ -81,7 +81,12 @@ type GhlOpportunityPage = {
 };
 type GhlContactPage = {
   contacts?: GhlContact[];
-  meta?: { startAfterId?: string | null; nextStartAfterId?: string | null };
+  meta?: {
+    startAfterId?: string | null;
+    startAfter?: string | number | null;
+    nextStartAfterId?: string | null;
+    nextPageUrl?: string | null;
+  };
 };
 type GhlContactResponse = GhlContact | { contact?: GhlContact };
 
@@ -205,10 +210,13 @@ export function extractAttributionEvidence(record: GhlOpportunity | GhlContact, 
 
 function attributionFromEvidence(evidence: AttributionEvidence[]) {
   const first = (field: AttributionField) => evidence.find((item) => item.field === field)?.value;
+  const uniqueEvidence = evidence.filter((item, index, items) => items.findIndex((candidate) =>
+    candidate.scope === item.scope && candidate.field === item.field && candidate.source === item.source && candidate.value === item.value,
+  ) === index);
   return {
     attributionSource: first("attributionSource"), utmSource: first("utmSource"), utmMedium: first("utmMedium"), utmCampaign: first("utmCampaign"),
     utmContent: first("utmContent"), utmTerm: first("utmTerm"), campaignMetaId: first("campaignMetaId"), adsetMetaId: first("adsetMetaId"),
-    adMetaId: first("adMetaId"), attributionEvidenceJson: JSON.stringify(evidence),
+    adMetaId: first("adMetaId"), attributionEvidenceJson: JSON.stringify(uniqueEvidence),
   };
 }
 
@@ -279,22 +287,36 @@ async function fetchOpportunities(locationId: string, token: string): Promise<Gh
   return opportunities;
 }
 
-async function fetchContacts(locationId: string, token: string): Promise<GhlContact[]> {
+function contactPageCursor(meta: GhlContactPage["meta"]) {
+  const nextPage = asString(meta?.nextPageUrl);
+  const nextPageParams = nextPage ? new URL(nextPage, GHL_API_BASE).searchParams : undefined;
+  const startAfterId = nextPageParams?.get("startAfterId")
+    ?? asString(meta?.nextStartAfterId)
+    ?? asString(meta?.startAfterId);
+  const rawStartAfter = nextPageParams?.get("startAfter") ?? meta?.startAfter;
+  const startAfter = typeof rawStartAfter === "number"
+    ? String(rawStartAfter)
+    : asString(rawStartAfter);
+  return startAfterId ? { startAfterId, ...(startAfter ? { startAfter } : {}) } : null;
+}
+
+/** Fetch every contact in the selected GHL location, following its cursor or next-page URL. */
+export async function fetchLocationContacts(locationId: string, token: string): Promise<GhlContact[]> {
   const contacts: GhlContact[] = [];
-  let startAfterId: string | undefined;
+  let cursor: { startAfterId: string; startAfter?: string } | null = null;
   const seenCursors = new Set<string>();
   do {
     const page = await ghlGet<GhlContactPage>("/contacts/", token, {
       locationId,
       limit: String(GHL_PAGE_SIZE),
-      ...(startAfterId ? { startAfterId } : {}),
+      ...(cursor ?? {}),
     });
     contacts.push(...(Array.isArray(page.contacts) ? page.contacts : []));
-    const next = asString(page.meta?.nextStartAfterId) ?? asString(page.meta?.startAfterId);
-    if (!next || seenCursors.has(next)) break;
-    seenCursors.add(next);
-    startAfterId = next;
-  } while (startAfterId);
+    cursor = contactPageCursor(page.meta);
+    const cursorKey = cursor ? `${cursor.startAfterId}/${cursor.startAfter ?? ""}` : null;
+    if (!cursorKey || seenCursors.has(cursorKey)) break;
+    seenCursors.add(cursorKey);
+  } while (cursor);
   return contacts;
 }
 
@@ -321,6 +343,45 @@ async function fetchOpportunityContacts(opportunities: GhlOpportunity[], token: 
     for (const contact of batch) if (contact?.id) contacts.set(contact.id, contact);
   }
   return contacts;
+}
+
+function firstString(records: GhlContact[], field: keyof GhlContact) {
+  for (const record of records) {
+    const value = asString(record[field]);
+    if (value) return value;
+  }
+  return undefined;
+}
+
+function mergedTags(records: GhlContact[]) {
+  const tags = records.flatMap((record) => {
+    const raw = record.tags;
+    if (!Array.isArray(raw)) return [];
+    return raw.flatMap((tag) => typeof tag === "string"
+      ? (tag.trim() ? [tag.trim()] : [])
+      : tag && typeof tag === "object" && "name" in tag && typeof tag.name === "string" && tag.name.trim()
+        ? [tag.name.trim()]
+        : []);
+  });
+  return [...new Set(tags)];
+}
+
+/** Combines list, embedded, and detail representations without dropping contact tags or evidence. */
+export function mergeGhlContacts(records: GhlContact[], fallbackId?: string): GhlContact | undefined {
+  const id = firstString(records, "id") ?? fallbackId;
+  if (!id) return undefined;
+  return {
+    id,
+    firstName: firstString(records, "firstName"),
+    lastName: firstString(records, "lastName"),
+    email: firstString(records, "email"),
+    phone: firstString(records, "phone"),
+    dateAdded: firstString(records, "dateAdded"),
+    dateUpdated: firstString(records, "dateUpdated"),
+    createdAt: firstString(records, "createdAt"),
+    updatedAt: firstString(records, "updatedAt"),
+    tags: mergedTags(records),
+  };
 }
 
 export async function rebuildCanonicalCrmLeads(clientId: string) {
@@ -363,7 +424,8 @@ export async function rebuildCanonicalCrmLeads(clientId: string) {
       ...contact.opportunities,
       {
         campaignMetaId: contact.campaignMetaId, adsetMetaId: contact.adsetMetaId, adMetaId: contact.adMetaId,
-        utmMedium: contact.utmMedium, utmCampaign: contact.utmCampaign, utmContent: contact.utmContent, utmTerm: contact.utmTerm,
+        attributionSource: contact.attributionSource, utmSource: contact.utmSource, utmMedium: contact.utmMedium,
+        utmCampaign: contact.utmCampaign, utmContent: contact.utmContent, utmTerm: contact.utmTerm,
         attributionEvidenceJson: contact.attributionEvidenceJson,
       },
     ];
@@ -416,7 +478,7 @@ export async function syncClientGhl(clientId: string): Promise<ClientGhlSyncResu
   if (!client) return null;
 
   const log = await prisma.clientSyncLog.create({
-    data: { clientId, status: "RUNNING", mode: "GHL", message: "Syncing GoHighLevel pipelines, opportunities, and embedded contacts." },
+    data: { clientId, status: "RUNNING", mode: "GHL", message: "Syncing GoHighLevel pipelines, opportunities, and all location contacts." },
   });
 
   try {
@@ -434,7 +496,7 @@ export async function syncClientGhl(clientId: string): Promise<ClientGhlSyncResu
     const [pipelinePayload, opportunities, fetchedContacts] = await Promise.all([
       ghlGet<{ pipelines?: GhlPipeline[] }>("/opportunities/pipelines", token, { locationId: client.ghlLocationId }),
       fetchOpportunities(client.ghlLocationId, token),
-      fetchContacts(client.ghlLocationId, token),
+      fetchLocationContacts(client.ghlLocationId, token),
     ]);
     const detailedContacts = await fetchOpportunityContacts(opportunities, token);
     const pipelines = (Array.isArray(pipelinePayload.pipelines) ? pipelinePayload.pipelines : []).filter(
@@ -453,11 +515,33 @@ export async function syncClientGhl(clientId: string): Promise<ClientGhlSyncResu
       pipelineIds.set(pipeline.id, { id: record.id, stages });
     }
 
+    const contactSources = new Map<string, GhlContact[]>();
+    const addContactSource = (contact: GhlContact | undefined, fallbackId?: string) => {
+      const ghlId = asString(contact?.id) ?? fallbackId;
+      if (!ghlId || !contact) return;
+      const sources = contactSources.get(ghlId) ?? [];
+      sources.push(contact);
+      contactSources.set(ghlId, sources);
+    };
+    for (const contact of fetchedContacts) addContactSource(contact);
+    for (const opportunity of opportunities) {
+      const contactGhlId = asString(opportunity.contact?.id) ?? asString(opportunity.contactId);
+      if (!contactGhlId) continue;
+      addContactSource(opportunity.contact, contactGhlId);
+      addContactSource(detailedContacts.get(contactGhlId), contactGhlId);
+    }
+
+    const mergedContacts = new Map<string, { contact: GhlContact; sources: GhlContact[] }>();
+    for (const [ghlId, sources] of contactSources) {
+      const contact = mergeGhlContacts(sources, ghlId);
+      if (contact) mergedContacts.set(ghlId, { contact, sources });
+    }
+
     const localContactIds = new Map<string, string>();
-    const upsertContact = async (contactDetails: GhlContact, fallbackId?: string) => {
+    const upsertContact = async (contactDetails: GhlContact, evidenceSources: GhlContact[], fallbackId?: string) => {
       const ghlId = asString(contactDetails.id) ?? fallbackId;
       if (!ghlId) return null;
-      const fields = attributionFromEvidence(extractAttributionEvidence(contactDetails, "contact"));
+      const fields = attributionFromEvidence(evidenceSources.flatMap((source) => extractAttributionEvidence(source, "contact")));
       const contact = await prisma.clientGhlContact.upsert({
         where: { clientId_ghlId: { clientId, ghlId } },
         create: {
@@ -479,7 +563,7 @@ export async function syncClientGhl(clientId: string): Promise<ClientGhlSyncResu
       localContactIds.set(ghlId, contact.id);
       return contact.id;
     };
-    for (const contact of fetchedContacts) await upsertContact(contact);
+    for (const [ghlId, { contact, sources }] of mergedContacts) await upsertContact(contact, sources, ghlId);
 
     const storedContacts = localContactIds.size;
     let storedOpportunities = 0;
@@ -489,9 +573,11 @@ export async function syncClientGhl(clientId: string): Promise<ClientGhlSyncResu
 
       const embeddedContact = opportunity.contact;
       const contactGhlId = asString(embeddedContact?.id) ?? asString(opportunity.contactId);
-      const contactDetails = (contactGhlId ? detailedContacts.get(contactGhlId) : undefined) ?? embeddedContact;
+      const merged = contactGhlId ? mergedContacts.get(contactGhlId) : undefined;
+      const contactDetails = merged?.contact ?? detailedContacts.get(contactGhlId ?? "") ?? embeddedContact;
       const contactId = contactGhlId
-        ? localContactIds.get(contactGhlId) ?? (contactDetails ? await upsertContact(contactDetails, contactGhlId) : null)
+        ? localContactIds.get(contactGhlId)
+          ?? (contactDetails ? await upsertContact(contactDetails, merged?.sources ?? [contactDetails], contactGhlId) : null)
         : null;
 
       const pipeline = opportunity.pipelineId ? pipelineIds.get(opportunity.pipelineId) : undefined;
