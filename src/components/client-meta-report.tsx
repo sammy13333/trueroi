@@ -275,12 +275,12 @@ export async function ClientMetaReport({
                   </tr>
                 </thead>
                 <tbody>
-                  <tr className="border-b border-[#272722] bg-[#090909] font-medium text-zinc-300">
+                  <tr className="border-b border-[#314653] bg-[#0b1115] font-semibold text-zinc-100">
                     <td className="px-4 py-3">Total</td><td> </td>
                     <MetricCells metrics={totals} /><CrmCells crm={crmTotals} spendCents={totals.spendCents} />
                   </tr>
                   {sortedRows.map(({ row, metrics }) => (
-                    <tr key={row.id} className="border-b border-[#272722] text-zinc-400 last:border-b-0">
+                    <tr key={row.id} className="border-b border-[#272722] text-zinc-200 last:border-b-0">
                       <td className="px-4 py-3"><RowName row={row} level={level} clientId={client.id} range={range} />{row.detail && <p className="mt-1 text-[11px] text-zinc-600">{row.detail}</p>}</td>
                       <td className="px-3 py-3 text-zinc-500">{row.parent ?? "—"}</td>
                       <td className="px-3 py-3"><Status status={row.status} /></td>
@@ -305,7 +305,7 @@ function costPerWebsiteLead(metrics: TotalMetric) {
 }
 
 function MetricCells({ metrics }: { metrics: TotalMetric }) {
-  return <><td className="numeric px-3 py-3">{currency(metrics.spendCents)}</td><td className="numeric px-3 py-3">{number(metrics.websiteLeads)}</td><td className="numeric px-3 py-3">{costPerWebsiteLead(metrics)}</td><td className="numeric px-3 py-3">{number(metrics.impressions)}</td><td className="numeric px-3 py-3">{number(metrics.reach)}</td><td className="numeric px-3 py-3">{number(metrics.clicks)}</td><td className="numeric px-3 py-3">{optionalNumber(metrics.linkClicks)}</td><td className="numeric px-3 py-3">{ctr(metrics)}</td><td className="numeric px-3 py-3">{linkCtr(metrics)}</td><td className="numeric px-3 py-3">{cpc(metrics)}</td><td className="numeric px-4 py-3">{costPerLinkClick(metrics)}</td></>;
+  return <><td className="numeric px-3 py-3 font-semibold text-zinc-50">{currency(metrics.spendCents)}</td><td className="numeric px-3 py-3 font-semibold text-cyan-200">{number(metrics.websiteLeads)}</td><td className="numeric px-3 py-3 font-semibold text-cyan-100">{costPerWebsiteLead(metrics)}</td><td className="numeric px-3 py-3 font-medium text-zinc-100">{number(metrics.impressions)}</td><td className="numeric px-3 py-3 font-medium text-zinc-100">{number(metrics.reach)}</td><td className="numeric px-3 py-3 font-medium text-zinc-100">{number(metrics.clicks)}</td><td className="numeric px-3 py-3 font-medium text-zinc-100">{optionalNumber(metrics.linkClicks)}</td><td className="numeric px-3 py-3 font-medium text-zinc-100">{ctr(metrics)}</td><td className="numeric px-3 py-3 font-medium text-zinc-100">{linkCtr(metrics)}</td><td className="numeric px-3 py-3 font-medium text-zinc-100">{cpc(metrics)}</td><td className="numeric px-4 py-3 font-medium text-zinc-100">{costPerLinkClick(metrics)}</td></>;
 }
 
 function sumCrmMetrics(values: CrmMetrics[]) {
