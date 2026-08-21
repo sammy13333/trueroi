@@ -220,10 +220,10 @@ function attributionFromEvidence(evidence: AttributionEvidence[]) {
   };
 }
 
-function attribution(opportunity: GhlOpportunity, contact: GhlContact | undefined) {
+function attribution(opportunity: GhlOpportunity, contacts: GhlContact[]) {
   return attributionFromEvidence([
     ...extractAttributionEvidence(opportunity, "opportunity"),
-    ...(contact ? extractAttributionEvidence(contact, "contact") : []),
+    ...contacts.flatMap((contact) => extractAttributionEvidence(contact, "contact")),
   ]);
 }
 
@@ -311,8 +311,11 @@ export async function fetchLocationContacts(locationId: string, token: string): 
       limit: String(GHL_PAGE_SIZE),
       ...(cursor ?? {}),
     });
-    contacts.push(...(Array.isArray(page.contacts) ? page.contacts : []));
-    cursor = contactPageCursor(page.meta);
+    const pageContacts = Array.isArray(page.contacts) ? page.contacts : [];
+    contacts.push(...pageContacts);
+    cursor = asString(page.meta?.nextPageUrl) || pageContacts.length >= GHL_PAGE_SIZE
+      ? contactPageCursor(page.meta)
+      : null;
     const cursorKey = cursor ? `${cursor.startAfterId}/${cursor.startAfter ?? ""}` : null;
     if (!cursorKey || seenCursors.has(cursorKey)) break;
     seenCursors.add(cursorKey);
@@ -582,7 +585,7 @@ export async function syncClientGhl(clientId: string): Promise<ClientGhlSyncResu
 
       const pipeline = opportunity.pipelineId ? pipelineIds.get(opportunity.pipelineId) : undefined;
       const stage = pipeline?.stages.find((item) => item.id === opportunity.pipelineStageId);
-      const attributionFields = attribution(opportunity, contactDetails);
+      const attributionFields = attribution(opportunity, merged?.sources ?? (contactDetails ? [contactDetails] : []));
       await prisma.clientGhlOpportunity.upsert({
         where: { clientId_ghlId: { clientId, ghlId } },
         create: {
