@@ -6,7 +6,6 @@ import { Suspense, type ReactNode } from "react";
 
 const clientNav = [
   ["Clients", "/clients"],
-  ["Client revenue", "/client-revenue"],
   ["Leads", "/leads"],
   ["Attribution", "/attribution"],
   ["Campaigns", "/campaigns"],
@@ -25,6 +24,7 @@ const agencyNav = [
   ["Ads", "/agency/ads"],
   ["Insights", "/agency/insights"],
   ["Monthly stats", "/agency/monthly"],
+  ["Client revenue", "/agency/revenue"],
   ["Expenses & P&L", "/agency/expenses"],
 ];
 

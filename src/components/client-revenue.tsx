@@ -138,9 +138,9 @@ export function ClientRevenue() {
   return (
     <AppShell>
       <PageHeader
-        eyebrow="Client ROI"
-        title="Client revenue"
-        description="Track manual retainers, setup fees, rev share, and other receivables by due date."
+        eyebrow="Agency ROI"
+        title="Client receivables"
+        description="Track manual retainers, setup fees, rev share, and other agency money owed by due date."
         actions={<button onClick={() => setShowForm((open) => !open)} className="rounded-md bg-[#27b7df] px-3 py-2 text-xs font-semibold text-[#061116] hover:bg-[#71d8ef]">{showForm ? "Close form" : "+ Add payment"}</button>}
       />
       <div className="space-y-6 p-5 sm:p-8">
