@@ -209,7 +209,16 @@ export function extractAttributionEvidence(record: GhlOpportunity | GhlContact, 
 }
 
 function attributionFromEvidence(evidence: AttributionEvidence[]) {
-  const first = (field: AttributionField) => evidence.find((item) => item.field === field)?.value;
+  const first = (field: AttributionField) => {
+    const matches = evidence.filter((item) => item.field === field);
+    // GHL's nested attributionSource can contain internal numeric tracking
+    // values under UTM-shaped keys. Explicit contact custom fields hold the
+    // landing-page UTM values configured by the client and take precedence.
+    if (["utmSource", "utmMedium", "utmCampaign", "utmContent", "utmTerm"].includes(field)) {
+      return matches.find((item) => item.source.includes(".customFields."))?.value ?? matches[0]?.value;
+    }
+    return matches[0]?.value;
+  };
   const uniqueEvidence = evidence.filter((item, index, items) => items.findIndex((candidate) =>
     candidate.scope === item.scope && candidate.field === item.field && candidate.source === item.source && candidate.value === item.value,
   ) === index);
