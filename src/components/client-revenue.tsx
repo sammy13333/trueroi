@@ -61,7 +61,10 @@ export function ClientRevenue() {
     }
   }
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    const timer = window.setTimeout(() => { void load(); }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   const monthKey = month.toISOString().slice(0, 7);
   const monthlyDue = useMemo(
