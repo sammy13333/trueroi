@@ -34,7 +34,7 @@ type MetaAd = {
   created_time?: string;
 };
 
-type MetaInsight = {
+export type MetaInsight = {
   date_start?: string;
   campaign_id?: string;
   adset_id?: string;
@@ -101,43 +101,35 @@ function dollarsToCents(value: string | undefined): number {
   return Number.isFinite(parsed) ? Math.round(parsed * 100) : 0;
 }
 
-const META_LEAD_ACTION_TYPES = new Set(["lead", "onsite_conversion.lead_grouped", "offsite_conversion.fb_pixel_lead", "omni_lead"]);
+// Meta's current Pixel Website Lead action. `offsite_conversion.lead` is the
+// documented legacy website-conversion action type and is used only when the
+// current action is absent; generic `lead` includes non-website destinations.
+const WEBSITE_LEAD_ACTION_TYPES = ["offsite_conversion.fb_pixel_lead", "offsite_conversion.lead"] as const;
 
-function leadActions(actions: MetaInsight["actions"]) {
-  return (actions ?? []).flatMap((action) => {
-    const actionType = action.action_type;
-    const count = toInt(action.value);
-    return actionType && META_LEAD_ACTION_TYPES.has(actionType) && count > 0 ? [{ actionType, count }] : [];
-  });
-}
-
-function leadCount(actions: MetaInsight["actions"]): number {
-  return (actions ?? []).reduce((total, action) => {
-    const type = action.action_type ?? "";
-    return total + (META_LEAD_ACTION_TYPES.has(type) ? toInt(action.value) : 0);
-  }, 0);
-}
-
-function metaLeadCostCents(insight: MetaInsight): number | null {
-  const actions = leadActions(insight.actions);
-  const leads = actions.reduce((total, action) => total + action.count, 0);
-  if (leads === 0) return null;
-
-  const costPerAction = new Map(
-    (insight.cost_per_action_type ?? [])
-      .flatMap((cost) => {
-        const actionType = cost.action_type;
-        const dollars = Number(cost.value);
-        return actionType && Number.isFinite(dollars) && dollars >= 0 ? [[actionType, dollars] as const] : [];
-      }),
+export function websiteLeadMetrics(insight: Pick<MetaInsight, "actions" | "cost_per_action_type">): {
+  websiteLeads: number;
+  websiteLeadCostCents: number | null;
+} {
+  const actions = new Map(
+    (insight.actions ?? []).flatMap((action) => {
+      const actionType = action.action_type;
+      return actionType ? [[actionType, toInt(action.value)] as const] : [];
+    }),
   );
-  const spendCents = dollarsToCents(insight.spend);
-  return actions.reduce((total, action) => {
-    const cost = costPerAction.get(action.actionType);
-    return total + (cost === undefined
-      ? Math.round((spendCents * action.count) / leads)
-      : Math.round(cost * action.count * 100));
-  }, 0);
+  const actionType = WEBSITE_LEAD_ACTION_TYPES.find((type) => (actions.get(type) ?? 0) > 0);
+  if (!actionType) return { websiteLeads: 0, websiteLeadCostCents: null };
+
+  const websiteLeads = actions.get(actionType)!;
+  const costPerAction = (insight.cost_per_action_type ?? []).find((cost) => cost.action_type === actionType);
+  const costDollars = Number(costPerAction?.value);
+  return {
+    websiteLeads,
+    // Do not use spend as a fallback: it would no longer be Meta's exact
+    // Cost per Result for the selected Website Lead action.
+    websiteLeadCostCents: Number.isFinite(costDollars) && costDollars >= 0
+      ? Math.round(costDollars * websiteLeads * 100)
+      : null,
+  };
 }
 
 function linkClickCount(actions: MetaInsight["actions"]): number {
@@ -307,7 +299,8 @@ export async function syncClientMeta(clientId: string): Promise<ClientMetaSyncRe
         const adsetId = insight.adset_id ? adsetIds.get(insight.adset_id) ?? null : null;
         const adId = insight.ad_id ? adIds.get(insight.ad_id) ?? null : null;
         const subjectMetaId = level === "CAMPAIGN" ? insight.campaign_id! : level === "ADSET" ? insight.adset_id! : insight.ad_id!;
-        const data = { clientId, date, level, subjectMetaId, campaignId, adsetId, adId, spendCents: dollarsToCents(insight.spend), impressions: toInt(insight.impressions), reach: toInt(insight.reach), clicks: toInt(insight.clicks), linkClicks: linkClickCount(insight.actions), leads: leadCount(insight.actions), metaLeadCostCents: metaLeadCostCents(insight) };
+        const websiteLeads = websiteLeadMetrics(insight);
+        const data = { clientId, date, level, subjectMetaId, campaignId, adsetId, adId, spendCents: dollarsToCents(insight.spend), impressions: toInt(insight.impressions), reach: toInt(insight.reach), clicks: toInt(insight.clicks), linkClicks: linkClickCount(insight.actions), ...websiteLeads };
         await prisma.clientDailyMetaMetric.upsert({
           where: { clientId_date_level_subjectMetaId: { clientId, date, level, subjectMetaId } },
           create: data,
