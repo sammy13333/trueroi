@@ -1,0 +1,23 @@
+services:
+  engines:
+    build: .
+    image: trueroi-engines:latest
+    container_name: trueroi-engines
+    volumes:
+      - ./footage:/app/footage # raw recorded video goes here
+      - ./output:/app/output   # cut/rendered ads come out here
+    env_file:
+      - .env
+    # Keep the container alive so you can `docker compose exec engines bash`
+    # and drive ffmpeg / whisperx / hyperframes interactively.
+    tty: true
+    stdin_open: true
+    # GPU acceleration for WhisperX transcription. Requires the NVIDIA Container
+    # Toolkit on the host. Delete this `deploy` block to run CPU-only.
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

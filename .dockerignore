@@ -1,0 +1,7 @@
+.git
+footage/*
+!footage/.gitkeep
+output/*
+!output/.gitkeep
+.env
+node_modules
